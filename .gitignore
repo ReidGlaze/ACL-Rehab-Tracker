@@ -1,0 +1,61 @@
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.idea/
+.cursor/
+.vscode/
+*.xcuserdata
+xcuserdata/
+
+# Claude / MCP
+.claude/
+.mcp.json
+.playwright-mcp/
+
+# Review screenshots
+web-*.png
+
+# Old projects (migrated)
+swiftui/
+
+# Design / test assets (not needed in repo)
+design_examples/
+test_images/
+
+# iOS - React Native legacy (ios/ios_new/ is the real app)
+ios/node_modules/
+ios/ios/Pods/
+ios/ios/.build/
+
+# iOS - SwiftUI app
+ios/ios_new/Pods/
+ios/ios_new/.build/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/*.jks
+android/*.keystore
+android/.idea/
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+
+# Keystores
+*.keystore
+debug.keystore
+
+# Node / Functions
+node_modules/
+functions/node_modules/
+functions/lib/
+
+# Environment
+.env
+.env.*

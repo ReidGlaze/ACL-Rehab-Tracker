@@ -1,0 +1,402 @@
+/* ACL Rehab Tracker - Website */
+
+:root {
+    --bg: #0D0D0D;
+    --surface: #1A1A1A;
+    --surface-light: #2A2A2A;
+    --primary: #FF2D55;
+    --success: #34C759;
+    --blue: #4A9EFF;
+    --text: #FFFFFF;
+    --text-secondary: #8E8E93;
+    --text-tertiary: #636366;
+    --border: #2A2A2A;
+    --card-bg: #1C1C1E;
+    --max-width: 960px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+a {
+    color: var(--primary);
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+
+a:hover {
+    opacity: 0.8;
+}
+
+.container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* Navigation */
+.nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(13, 13, 13, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+}
+
+.nav .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+}
+
+.nav-brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.nav-brand span {
+    color: var(--primary);
+}
+
+.nav-links {
+    display: flex;
+    gap: 24px;
+    list-style: none;
+}
+
+.nav-links a {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.nav-links a:hover {
+    color: var(--text);
+    opacity: 1;
+}
+
+/* Hero */
+.hero {
+    padding: 140px 0 80px;
+}
+
+.hero .container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+}
+
+.hero h1 .highlight {
+    color: var(--primary);
+}
+
+.hero p {
+    font-size: 1.05rem;
+    color: var(--text-secondary);
+    max-width: 480px;
+    margin-bottom: 32px;
+    line-height: 1.6;
+}
+
+.app-store-badge {
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+.app-store-badge:hover {
+    transform: scale(1.03);
+    opacity: 1;
+}
+
+.app-store-badge img {
+    height: 48px;
+}
+
+/* Sections */
+.section {
+    padding: 64px 0;
+}
+
+.section-header {
+    margin-bottom: 32px;
+}
+
+.section-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+}
+
+.section-header p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+/* Feature Cards */
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.feature-card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 24px;
+}
+
+.feature-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-bottom: 16px;
+}
+
+.feature-dot.pink { background: var(--primary); }
+.feature-dot.blue { background: var(--blue); }
+.feature-dot.green { background: var(--success); }
+.feature-dot.orange { background: #FF9500; }
+
+.feature-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.feature-card p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* How It Works */
+.steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.step {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 24px;
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.step h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.step p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* CTA Section */
+.cta {
+    padding: 64px 0;
+}
+
+.cta-card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 48px 32px;
+    text-align: center;
+}
+
+.cta h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.cta p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+}
+
+/* Footer */
+.footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+}
+
+.footer .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.footer-left p {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+}
+
+.footer-links {
+    display: flex;
+    gap: 20px;
+    list-style: none;
+}
+
+.footer-links a {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.footer-links a:hover {
+    color: var(--text);
+    opacity: 1;
+}
+
+/* Legal Pages */
+.legal {
+    padding: 120px 0 80px;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.legal h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.legal .last-updated {
+    color: var(--text-tertiary);
+    font-size: 0.85rem;
+    margin-bottom: 40px;
+}
+
+.legal h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-top: 36px;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.legal p,
+.legal li {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.75;
+    margin-bottom: 12px;
+}
+
+.legal ul {
+    padding-left: 24px;
+    margin-bottom: 16px;
+}
+
+.legal li {
+    margin-bottom: 6px;
+}
+
+.legal a {
+    color: var(--primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .steps {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .footer .container {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+    }
+
+    .hero {
+        padding: 110px 0 48px;
+    }
+
+    .section {
+        padding: 48px 0;
+    }
+
+    .cta {
+        padding: 48px 0;
+    }
+
+    .cta-card {
+        padding: 32px 24px;
+    }
+
+    .legal {
+        padding: 100px 24px 60px;
+    }
+}
+
+@media (max-width: 480px) {
+    .nav-links {
+        gap: 16px;
+    }
+
+    .nav-links a {
+        font-size: 0.8rem;
+    }
+
+    .feature-card {
+        padding: 20px;
+    }
+
+    .step {
+        padding: 20px;
+    }
+}
