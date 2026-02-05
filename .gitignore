@@ -56,6 +56,10 @@ node_modules/
 functions/node_modules/
 functions/lib/
 
+# Firebase rules (keep private)
+firestore.rules
+storage.rules
+
 # Environment
 .env
 .env.*
