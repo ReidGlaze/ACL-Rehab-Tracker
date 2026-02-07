@@ -21,7 +21,7 @@ android {
         applicationId = "com.twintipsolutions.aclrehabtracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -63,11 +63,13 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation(libs.androidx.activity.compose)
@@ -101,6 +103,9 @@ dependencies {
 
     // Permissions
     implementation(libs.accompanist.permissions)
+
+    // In-App Review
+    implementation(libs.play.review)
 
     // Debug
     debugImplementation(libs.androidx.ui.tooling)

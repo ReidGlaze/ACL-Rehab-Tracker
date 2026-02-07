@@ -34,6 +34,8 @@ import com.twintipsolutions.aclrehabtracker.ui.screens.onboarding.NameInputScree
 import com.twintipsolutions.aclrehabtracker.ui.screens.onboarding.SurgeryDateScreen
 import com.twintipsolutions.aclrehabtracker.ui.screens.onboarding.WelcomeScreen
 import com.twintipsolutions.aclrehabtracker.ui.screens.progress.ProgressScreen
+import com.twintipsolutions.aclrehabtracker.ui.screens.settings.PrivacyPolicyScreen
+import com.twintipsolutions.aclrehabtracker.ui.screens.settings.ProfileScreen
 import com.twintipsolutions.aclrehabtracker.ui.theme.AppColors
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -67,17 +69,20 @@ fun ACLRehabApp() {
 
     // Auth + onboarding check
     LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val onboardingComplete = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
         try {
             if (!AuthService.isAuthenticated) {
+                android.util.Log.d("ACLRehabApp", "Not authenticated, signing in anonymously...")
                 AuthService.signInAnonymously()
+                android.util.Log.d("ACLRehabApp", "Auth success: uid=${AuthService.currentUserId}")
+            } else {
+                android.util.Log.d("ACLRehabApp", "Already authenticated: uid=${AuthService.currentUserId}")
             }
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val onboardingComplete = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
-            appState = if (onboardingComplete) AppState.MAIN else AppState.ONBOARDING
-        } catch (_: Exception) {
-            // If auth fails, still show onboarding (will retry)
-            appState = AppState.ONBOARDING
+        } catch (e: Exception) {
+            android.util.Log.e("ACLRehabApp", "Auth failed: ${e.message}", e)
         }
+        appState = if (onboardingComplete) AppState.MAIN else AppState.ONBOARDING
     }
 
     when (appState) {
@@ -89,7 +94,7 @@ fun ACLRehabApp() {
                 appState = AppState.MAIN
             }
         )
-        AppState.MAIN -> MainTabView()
+        AppState.MAIN -> MainTabView(onAccountDeleted = { appState = AppState.ONBOARDING })
     }
 }
 
@@ -107,6 +112,7 @@ private fun LoadingView() {
 
 @Composable
 private fun OnboardingFlow(onComplete: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val navController = rememberNavController()
 
@@ -145,6 +151,15 @@ private fun OnboardingFlow(onComplete: () -> Unit) {
                 onComplete = {
                     scope.launch {
                         isSaving = true
+                        // Always cache profile locally so Home can show it even offline
+                        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putString("cached_name", name)
+                            .putLong("cached_surgery_date", surgeryDate.time)
+                            .putString("cached_injured_knee", selectedKnee.name.lowercase())
+                            .putString("cached_injury_type", selectedInjuryType.firestoreValue)
+                            .apply()
+
                         try {
                             // Ensure authenticated
                             if (!AuthService.isAuthenticated) {
@@ -162,6 +177,7 @@ private fun OnboardingFlow(onComplete: () -> Unit) {
                             onComplete()
                         } catch (_: Exception) {
                             // Still complete onboarding even if save fails
+                            // Profile data is cached locally above
                             onComplete()
                         }
                         isSaving = false
@@ -173,7 +189,7 @@ private fun OnboardingFlow(onComplete: () -> Unit) {
 }
 
 @Composable
-private fun MainTabView() {
+private fun MainTabView(onAccountDeleted: () -> Unit = {}) {
     val navController = rememberNavController()
 
     Scaffold(
@@ -223,12 +239,25 @@ private fun MainTabView() {
                             launchSingleTop = true
                             restoreState = true
                         }
+                    },
+                    onNavigateToProfile = {
+                        navController.navigate("profile")
                     }
                 )
             }
             composable(Screen.Measure.route) { MeasureScreen() }
             composable(Screen.History.route) { HistoryScreen() }
             composable(Screen.Progress.route) { ProgressScreen() }
+            composable("profile") {
+                ProfileScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigateToPrivacyPolicy = { navController.navigate("privacy_policy") },
+                    onAccountDeleted = onAccountDeleted
+                )
+            }
+            composable("privacy_policy") {
+                PrivacyPolicyScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

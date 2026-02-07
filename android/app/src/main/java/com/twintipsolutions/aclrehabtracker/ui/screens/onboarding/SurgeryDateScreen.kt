@@ -30,7 +30,10 @@ fun SurgeryDateScreen(
                 val minDate = Calendar.getInstance().apply {
                     set(2020, Calendar.JANUARY, 1)
                 }.timeInMillis
-                return utcTimeMillis in minDate..System.currentTimeMillis()
+                val maxDate = Calendar.getInstance().apply {
+                    add(Calendar.YEAR, 1)
+                }.timeInMillis
+                return utcTimeMillis in minDate..maxDate
             }
         }
     )
@@ -49,6 +52,7 @@ fun SurgeryDateScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Background)
+            .navigationBarsPadding()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

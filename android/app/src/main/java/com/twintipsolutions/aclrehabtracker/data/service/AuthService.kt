@@ -35,4 +35,8 @@ object AuthService {
     fun signOut() {
         auth.signOut()
     }
+
+    suspend fun deleteUser() {
+        auth.currentUser?.delete()?.await()
+    }
 }

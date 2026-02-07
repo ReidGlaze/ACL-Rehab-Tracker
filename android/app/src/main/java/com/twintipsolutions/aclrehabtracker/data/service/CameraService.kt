@@ -116,6 +116,8 @@ class CameraService(private val context: Context) {
         return file
     }
 
+    fun getPreviewBitmap(): Bitmap? = previewView?.bitmap
+
     fun stopCamera() {
         cameraProvider?.unbindAll()
     }

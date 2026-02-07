@@ -18,12 +18,12 @@ enum class KneeSide(val displayName: String) {
     }
 }
 
-enum class InjuryType(val displayName: String, val firestoreValue: String) {
-    ACL_ONLY("ACL Only", "acl_only"),
-    ACL_MENISCUS("ACL + Meniscus", "acl_meniscus"),
-    ACL_MCL("ACL + MCL", "acl_mcl"),
-    ACL_MENISCUS_MCL("ACL + Meniscus + MCL", "acl_meniscus_mcl"),
-    OTHER("Other", "other");
+enum class InjuryType(val displayName: String, val firestoreValue: String, val description: String) {
+    ACL_ONLY("ACL Only", "acl_only", "Anterior cruciate ligament reconstruction"),
+    ACL_MENISCUS("ACL + Meniscus", "acl_meniscus", "ACL reconstruction with meniscus repair"),
+    ACL_MCL("ACL + MCL", "acl_mcl", "ACL and medial collateral ligament"),
+    ACL_MENISCUS_MCL("ACL + Meniscus + MCL", "acl_meniscus_mcl", "ACL, meniscus, and MCL repair"),
+    OTHER("Other", "other", "Other knee procedure");
 
     companion object {
         fun fromString(value: String): InjuryType {

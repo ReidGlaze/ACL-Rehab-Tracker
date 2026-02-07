@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.twintipsolutions.aclrehabtracker.data.model.Measurement
@@ -34,13 +35,20 @@ fun ProgressScreen() {
     var measurements by remember { mutableStateOf<List<Measurement>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun loadData() {
-        val uid = AuthService.currentUserId ?: return
+        val uid = AuthService.currentUserId
+        if (uid == null) {
+            isLoading = false
+            return
+        }
         try {
             measurements = FirestoreService.getMeasurements(uid)
-        } catch (_: Exception) { }
+        } catch (_: Exception) {
+            errorMessage = "Failed to load progress data."
+        }
         isLoading = false
     }
 
@@ -61,6 +69,17 @@ fun ProgressScreen() {
         computeDailyAverages(measurements.filter { it.type == MeasurementType.FLEXION })
     }
 
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            title = { Text("Error") },
+            text = { Text(errorMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { errorMessage = null }) { Text("OK") }
+            }
+        )
+    }
+
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = {
@@ -74,6 +93,14 @@ fun ProgressScreen() {
             .fillMaxSize()
             .background(AppColors.Background)
     ) {
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = AppColors.Primary)
+        }
+    } else {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -122,6 +149,7 @@ fun ProgressScreen() {
         // Stats
         StatsSection(measurements)
     }
+    } // end else (not loading)
     }
 }
 
@@ -229,10 +257,19 @@ private fun DualLineChart(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp),
+                    .height(220.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        painter = androidx.compose.ui.res.painterResource(
+                            id = android.R.drawable.ic_menu_recent_history
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = AppColors.TextTertiary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "No data yet",
                         fontSize = 17.sp,
@@ -243,7 +280,8 @@ private fun DualLineChart(
                     Text(
                         text = "Take measurements to track\nyour progress",
                         fontSize = 15.sp,
-                        color = AppColors.TextTertiary
+                        color = AppColors.TextTertiary,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -363,33 +401,89 @@ private fun LegendItem(color: Color, label: String, goal: String) {
 
 @Composable
 private fun StatsSection(measurements: List<Measurement>) {
-    val extensions = measurements.filter { it.type == MeasurementType.EXTENSION }
-    val flexions = measurements.filter { it.type == MeasurementType.FLEXION }
+    val extensions = measurements.filter { it.type == MeasurementType.EXTENSION }.sortedBy { it.timestamp.time }
+    val flexions = measurements.filter { it.type == MeasurementType.FLEXION }.sortedBy { it.timestamp.time }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (extensions.isNotEmpty()) {
-            StatRow("Best Extension", "${extensions.minOf { it.angle }}°")
-            StatRow("Latest Extension", "${extensions.first().angle}°")
+            StatsRow(
+                type = MeasurementType.EXTENSION,
+                color = AppColors.ExtensionBlue,
+                best = "${extensions.minOf { it.angle }}°",
+                latest = "${extensions.last().angle}°"
+            )
         }
         if (flexions.isNotEmpty()) {
-            StatRow("Best Flexion", "${flexions.maxOf { it.angle }}°")
-            StatRow("Latest Flexion", "${flexions.first().angle}°")
+            StatsRow(
+                type = MeasurementType.FLEXION,
+                color = AppColors.FlexionPink,
+                best = "${flexions.maxOf { it.angle }}°",
+                latest = "${flexions.last().angle}°"
+            )
         }
-        StatRow("Total Measurements", "${measurements.size}")
+
+        // Total count
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(AppColors.Surface)
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = "Total Measurements", fontSize = 15.sp, color = AppColors.TextSecondary)
+            Text(text = "${measurements.size}", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = AppColors.Text)
+        }
     }
 }
 
 @Composable
-private fun StatRow(label: String, value: String) {
+private fun StatsRow(
+    type: MeasurementType,
+    color: Color,
+    best: String,
+    latest: String
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(AppColors.Surface)
             .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, fontSize = 15.sp, color = AppColors.TextSecondary)
-        Text(text = value, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = AppColors.Text)
+        // Label with dot
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = type.displayName,
+                fontSize = 15.sp,
+                color = AppColors.Text
+            )
+        }
+
+        // Best
+        Column(horizontalAlignment = Alignment.End) {
+            Text(text = "Best", fontSize = 11.sp, color = AppColors.TextTertiary)
+            Text(text = best, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = color)
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Latest
+        Column(horizontalAlignment = Alignment.End) {
+            Text(text = "Latest", fontSize = 11.sp, color = AppColors.TextTertiary)
+            Text(text = latest, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = AppColors.Text)
+        }
     }
 }

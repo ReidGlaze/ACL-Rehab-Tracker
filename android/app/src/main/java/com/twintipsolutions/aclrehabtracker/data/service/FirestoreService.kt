@@ -74,4 +74,24 @@ object FirestoreService {
             .delete()
             .await()
     }
+
+    suspend fun deleteUserData(uid: String) {
+        val batch = db.batch()
+
+        // Delete profile
+        val profileRef = db.collection("users").document(uid)
+            .collection("profile").document("info")
+        batch.delete(profileRef)
+
+        // Delete all measurements
+        val snapshot = db.collection("users").document(uid)
+            .collection("measurements")
+            .get()
+            .await()
+        for (doc in snapshot.documents) {
+            batch.delete(doc.reference)
+        }
+
+        batch.commit().await()
+    }
 }

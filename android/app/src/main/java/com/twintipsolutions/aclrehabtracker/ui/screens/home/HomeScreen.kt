@@ -1,6 +1,7 @@
 package com.twintipsolutions.aclrehabtracker.ui.screens.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,28 +24,64 @@ import com.twintipsolutions.aclrehabtracker.data.service.AuthService
 import com.twintipsolutions.aclrehabtracker.data.service.FirestoreService
 import com.twintipsolutions.aclrehabtracker.ui.theme.AppColors
 import com.twintipsolutions.aclrehabtracker.util.DateHelpers
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
+fun HomeScreen(
+    onNavigateToMeasure: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {}
+) {
+    val context = LocalContext.current
     var userProfile by remember { mutableStateOf<UserProfile?>(null) }
     var latestExtension by remember { mutableStateOf<Measurement?>(null) }
     var latestFlexion by remember { mutableStateOf<Measurement?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    fun loadCachedProfile(): UserProfile? {
+        val prefs = context.getSharedPreferences("acl_rehab_prefs", android.content.Context.MODE_PRIVATE)
+        val name = prefs.getString("cached_name", null) ?: return null
+        val surgeryDateMs = prefs.getLong("cached_surgery_date", 0L)
+        return UserProfile(
+            id = "cached",
+            name = name,
+            surgeryDate = if (surgeryDateMs > 0) Date(surgeryDateMs) else null
+        )
+    }
+
     suspend fun loadData() {
-        val uid = AuthService.currentUserId ?: return
+        val uid = AuthService.currentUserId
+        if (uid == null) {
+            // Fall back to locally cached profile from onboarding
+            if (userProfile == null) {
+                userProfile = loadCachedProfile()
+            }
+            isLoading = false
+            return
+        }
         try {
             userProfile = FirestoreService.getUserProfile(uid)
+            // If Firestore returns null, try local cache
+            if (userProfile == null) {
+                userProfile = loadCachedProfile()
+            }
             val measurements = FirestoreService.getMeasurements(uid)
             latestExtension = measurements.firstOrNull { it.type == MeasurementType.EXTENSION }
             latestFlexion = measurements.firstOrNull { it.type == MeasurementType.FLEXION }
-        } catch (_: Exception) { }
+        } catch (_: Exception) {
+            // On network error, fall back to cached profile
+            if (userProfile == null) {
+                userProfile = loadCachedProfile()
+            }
+            errorMessage = "Failed to load data. Pull to refresh to try again."
+        }
         isLoading = false
     }
 
@@ -52,6 +89,20 @@ fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
 
     val weekPostOp = remember(userProfile) {
         DateHelpers.calculateWeekPostOp(userProfile?.surgeryDate)
+    }
+    val daysUntilSurgery = remember(userProfile) {
+        DateHelpers.daysUntilSurgery(userProfile?.surgeryDate)
+    }
+
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            title = { Text("Error") },
+            text = { Text(errorMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { errorMessage = null }) { Text("OK") }
+            }
+        )
     }
 
     PullToRefreshBox(
@@ -80,8 +131,12 @@ fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
+                    val greeting = userProfile?.name
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { "Hey, $it" }
+                        ?: "Today"
                     Text(
-                        text = "Today",
+                        text = greeting,
                         fontSize = 34.sp,
                         fontWeight = FontWeight.Bold,
                         color = AppColors.Text
@@ -98,7 +153,8 @@ fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(AppColors.SurfaceLight),
+                        .background(AppColors.SurfaceLight)
+                        .clickable { onNavigateToProfile() },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -126,22 +182,61 @@ fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Week",
-                        fontSize = 17.sp,
-                        color = AppColors.Background
-                    )
-                    Text(
-                        text = "$weekPostOp",
-                        fontSize = 72.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AppColors.Background
-                    )
-                    Text(
-                        text = "Post-Op Recovery",
-                        fontSize = 17.sp,
-                        color = AppColors.Background
-                    )
+                    if (daysUntilSurgery > 0) {
+                        // Surgery is in the future
+                        Text(
+                            text = "Surgery in",
+                            fontSize = 17.sp,
+                            color = AppColors.Background
+                        )
+                        Text(
+                            text = "$daysUntilSurgery",
+                            fontSize = 72.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppColors.Background
+                        )
+                        Text(
+                            text = if (daysUntilSurgery == 1) "Day" else "Days",
+                            fontSize = 17.sp,
+                            color = AppColors.Background
+                        )
+                    } else if (daysUntilSurgery == 0 && weekPostOp == 0) {
+                        // Surgery day
+                        Text(
+                            text = "Week",
+                            fontSize = 17.sp,
+                            color = AppColors.Background
+                        )
+                        Text(
+                            text = "0",
+                            fontSize = 72.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppColors.Background
+                        )
+                        Text(
+                            text = "Surgery Day",
+                            fontSize = 17.sp,
+                            color = AppColors.Background
+                        )
+                    } else {
+                        // Post-op recovery
+                        Text(
+                            text = "Week",
+                            fontSize = 17.sp,
+                            color = AppColors.Background
+                        )
+                        Text(
+                            text = "$weekPostOp",
+                            fontSize = 72.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppColors.Background
+                        )
+                        Text(
+                            text = "Post-Op Recovery",
+                            fontSize = 17.sp,
+                            color = AppColors.Background
+                        )
+                    }
                 }
             }
 
@@ -150,8 +245,8 @@ fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
             // Latest Measurements
             Text(
                 text = "Latest Measurements",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
                 color = AppColors.Text
             )
 
@@ -174,8 +269,6 @@ fun HomeScreen(onNavigateToMeasure: () -> Unit = {}) {
                     modifier = Modifier.weight(1f)
                 )
             }
-
-            Spacer(modifier = Modifier.weight(1f))
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -222,7 +315,7 @@ private fun MeasurementCard(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .background(AppColors.Surface)
-            .padding(16.dp),
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -237,7 +330,7 @@ private fun MeasurementCard(
             text = value,
             fontSize = 36.sp,
             fontWeight = FontWeight.Bold,
-            color = AppColors.Text
+            color = if (value == "--") AppColors.TextTertiary else AppColors.Text
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(

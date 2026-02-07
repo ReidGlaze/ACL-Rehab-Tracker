@@ -46,14 +46,24 @@ class GeminiPoseService {
             }
 
             return try parseCloudFunctionResponse(data)
+        } catch let error as GeminiPoseError {
+            throw error
         } catch let error as NSError {
-            // Handle Firebase Functions errors
+            // Handle Firebase Functions errors with user-friendly messages
             if error.domain == FunctionsErrorDomain {
                 let code = FunctionsErrorCode(rawValue: error.code)
-                let message = error.localizedDescription
-                throw GeminiPoseError.detectionFailed(message)
+                switch code {
+                case .unauthenticated:
+                    throw GeminiPoseError.detectionFailed("Authentication error. Please restart the app and try again.")
+                case .unavailable:
+                    throw GeminiPoseError.detectionFailed("AI service is temporarily unavailable. Please try again later.")
+                case .deadlineExceeded:
+                    throw GeminiPoseError.detectionFailed("Analysis took too long. Please try again with a clearer photo.")
+                default:
+                    throw GeminiPoseError.detectionFailed("Could not analyze the photo. Please try again.")
+                }
             }
-            throw GeminiPoseError.detectionFailed(error.localizedDescription)
+            throw GeminiPoseError.detectionFailed("Could not analyze the photo. Please check your connection and try again.")
         }
     }
 
@@ -97,11 +107,13 @@ class GeminiPoseService {
             throw GeminiPoseError.invalidResponse
         }
 
+        let clampedAngle = max(0, min(180, angle))
+
         return PoseResult(
             hip: Keypoint(x: hipX, y: hipY, confidence: Float(confidence)),
             knee: Keypoint(x: kneeX, y: kneeY, confidence: Float(confidence)),
             ankle: Keypoint(x: ankleX, y: ankleY, confidence: Float(confidence)),
-            angle: angle
+            angle: clampedAngle
         )
     }
 }

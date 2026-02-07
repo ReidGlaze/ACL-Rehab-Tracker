@@ -1,5 +1,7 @@
 import SwiftUI
 import PhotosUI
+import UIKit
+import StoreKit
 
 enum MeasureScreenState {
     case camera
@@ -11,26 +13,42 @@ enum MeasureScreenState {
 struct MeasureView: View {
     @StateObject private var cameraService = CameraService()
     @StateObject private var authService = AuthService.shared
+    @Environment(\.requestReview) private var requestReview
 
     @State private var measurementType: MeasurementType = .extension
     @State private var screenState: MeasureScreenState = .camera
+    @State private var isCameraLoading = true
     @State private var poseResult: PoseResult?
     @State private var isProcessing = false
     @State private var errorMessage: String?
     @State private var showError = false
-    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var showPhotoPicker = false
     @State private var userProfile: UserProfile?
+    @State private var showSuccessBanner = false
+    @AppStorage("measurementSaveCount") private var saveCount = 0
+    @AppStorage("lastReviewPromptDate") private var lastReviewPromptDateInterval: Double = 0
 
     var body: some View {
         Group {
             switch screenState {
-            case .camera:
+            case .camera, .processing:
                 cameraView
-            case .processing:
-                processingView
             case .result, .saving:
                 resultView
+            }
+        }
+        .overlay(alignment: .top) {
+            if showSuccessBanner {
+                Text("Measurement saved!")
+                    .font(AppTypography.headline)
+                    .foregroundColor(AppColors.text)
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(AppColors.success.opacity(0.9))
+                    .cornerRadius(AppRadius.md)
+                    .padding(.top, AppSpacing.xl)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.easeInOut, value: showSuccessBanner)
             }
         }
         .background(AppColors.background)
@@ -46,6 +64,11 @@ struct MeasureView: View {
         } message: {
             Text(errorMessage ?? "An error occurred")
         }
+        .sheet(isPresented: $showPhotoPicker) {
+            ImagePickerView { image in
+                handleSelectedPhoto(image)
+            }
+        }
     }
 
     // MARK: - Camera View
@@ -57,16 +80,6 @@ struct MeasureView: View {
                     .font(AppTypography.largeTitle)
                     .foregroundColor(AppColors.text)
                 Spacer()
-
-                // Flip Camera Button
-                Button(action: { cameraService.flipCamera() }) {
-                    Image(systemName: "camera.rotate")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(AppColors.text)
-                        .frame(width: 44, height: 44)
-                        .background(AppColors.surface)
-                        .cornerRadius(AppRadius.md)
-                }
             }
             .padding(.horizontal, AppSpacing.lg)
             .padding(.top, AppSpacing.md)
@@ -91,43 +104,65 @@ struct MeasureView: View {
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.vertical, AppSpacing.md)
 
-            // Capture Button (only when camera is ready)
-            if cameraService.isCameraReady {
-                captureButton
-                    .padding(.bottom, AppSpacing.xl)
-            } else {
-                Spacer()
-                    .frame(height: 80 + AppSpacing.xl)
-            }
+            // Bottom controls: Library | Capture | Flip Camera
+            cameraControls
+                .opacity(screenState == .processing ? 0.4 : 1.0)
+                .disabled(screenState == .processing)
+                .padding(.bottom, AppSpacing.xl)
         }
     }
 
-    // MARK: - Processing View (shows captured image while analyzing)
-    private var processingView: some View {
-        ZStack {
-            // Show the captured image
-            if let image = cameraService.capturedImage {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .ignoresSafeArea()
+    private var cameraControls: some View {
+        HStack {
+            // Photo Library picker (left)
+            Button(action: { showPhotoPicker = true }) {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(AppColors.text)
+                    .frame(width: 48, height: 48)
+                    .background(AppColors.surface)
+                    .cornerRadius(AppRadius.md)
             }
+            .accessibilityLabel("Pick from library")
 
-            // Dark overlay
-            Color.black.opacity(0.6)
-                .ignoresSafeArea()
+            Spacer()
 
-            // Loading indicator
-            VStack(spacing: AppSpacing.lg) {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(2)
+            // Capture button (center)
+            Button(action: handleCapture) {
+                ZStack {
+                    Circle()
+                        .stroke(AppColors.text, lineWidth: 4)
+                        .frame(width: 80, height: 80)
 
-                Text("Analyzing your knee angle...")
-                    .font(AppTypography.title3)
-                    .foregroundColor(.white)
+                    if isProcessing {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: AppColors.text))
+                    } else {
+                        Circle()
+                            .fill(AppColors.primary)
+                            .frame(width: 64, height: 64)
+                    }
+                }
             }
+            .disabled(isProcessing || (!cameraService.isCameraReady && isCameraLoading))
+            .opacity((isProcessing || (!cameraService.isCameraReady && isCameraLoading)) ? 0.4 : 1.0)
+
+            Spacer()
+
+            // Flip camera (right)
+            Button(action: { cameraService.flipCamera() }) {
+                Image(systemName: "camera.rotate")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(AppColors.text)
+                    .frame(width: 48, height: 48)
+                    .background(AppColors.surface)
+                    .cornerRadius(AppRadius.md)
+            }
+            .accessibilityLabel("Switch camera")
+            .opacity(cameraService.isCameraReady ? 1.0 : 0.4)
+            .disabled(!cameraService.isCameraReady)
         }
+        .padding(.horizontal, AppSpacing.xl)
     }
 
     private var typeToggle: some View {
@@ -153,68 +188,67 @@ struct MeasureView: View {
         ZStack {
             if cameraService.isCameraReady, let session = cameraService.session {
                 CameraPreview(session: session)
-                    .cornerRadius(AppRadius.lg)
-            } else {
-                // Camera not available - show test mode option (works in simulator)
+
+                // Processing overlay on top of camera
+                if screenState == .processing {
+                    if let image = cameraService.capturedImage {
+                        Color.clear.overlay(
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        )
+                        .clipped()
+                    }
+
+                    // Dark overlay
+                    Color.black.opacity(0.6)
+
+                    // Spinner + text
+                    VStack(spacing: AppSpacing.md) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+                        Text("Analyzing...")
+                            .font(AppTypography.headline)
+                            .foregroundColor(.white)
+                    }
+                }
+            } else if isCameraLoading {
                 VStack(spacing: AppSpacing.md) {
-                    Image(systemName: "photo.on.rectangle")
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppColors.textSecondary))
+                        .scaleEffect(1.5)
+                    Text("Starting camera...")
+                        .font(AppTypography.subhead)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AppColors.surface)
+            } else {
+                // Camera genuinely not available (simulator)
+                VStack(spacing: AppSpacing.md) {
+                    Image(systemName: "camera.slash")
                         .font(.system(size: 48))
                         .foregroundColor(AppColors.textSecondary)
+                        .accessibilityHidden(true)
 
                     Text("Camera not available")
                         .font(AppTypography.headline)
                         .foregroundColor(AppColors.text)
 
-                    Text("Use photo library to test")
+                    Text("Use photo library instead")
                         .font(AppTypography.subhead)
                         .foregroundColor(AppColors.textSecondary)
-
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Text("Pick from Library")
-                            .font(AppTypography.headline)
-                            .foregroundColor(AppColors.text)
-                            .padding(.horizontal, AppSpacing.lg)
-                            .padding(.vertical, AppSpacing.sm)
-                            .background(AppColors.primary)
-                            .cornerRadius(AppRadius.md)
-                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AppColors.surface)
-                .cornerRadius(AppRadius.lg)
             }
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(3/4, contentMode: .fit)
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            handleSelectedPhoto(newItem)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.lg))
     }
 
-    private var captureButton: some View {
-        Button(action: handleCapture) {
-            ZStack {
-                Circle()
-                    .fill(AppColors.primary)
-                    .frame(width: 80, height: 80)
-
-                Circle()
-                    .stroke(AppColors.text, lineWidth: 4)
-                    .frame(width: 80, height: 80)
-
-                if isProcessing {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: AppColors.background))
-                } else {
-                    Circle()
-                        .fill(AppColors.primary)
-                        .frame(width: 60, height: 60)
-                }
-            }
-        }
-        .disabled(isProcessing || !cameraService.isCameraReady)
-        .opacity(isProcessing ? 0.7 : 1.0)
-    }
 
     // MARK: - Result View
     private var resultView: some View {
@@ -322,10 +356,10 @@ struct MeasureView: View {
             do {
                 try await cameraService.setupCamera()
             } catch {
-                errorMessage = error.localizedDescription
-                showError = true
+                print("Camera setup failed: \(error.localizedDescription)")
             }
         }
+        isCameraLoading = false
     }
 
     private func loadUserProfile() async {
@@ -339,15 +373,13 @@ struct MeasureView: View {
     }
 
     private func handleCapture() {
+        // Show processing state immediately so user knows photo was taken
+        screenState = .processing
+
         Task {
             do {
-                // Capture the actual photo
+                // Capture the actual photo (capturedImage set by delegate)
                 let imagePath = try await cameraService.capturePhoto()
-
-                // Transition to processing view (shows captured image with loading)
-                await MainActor.run {
-                    screenState = .processing
-                }
 
                 // Send image directly to Gemini for angle analysis with injury info
                 let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
@@ -369,34 +401,29 @@ struct MeasureView: View {
         }
     }
 
-    private func handleSelectedPhoto(_ item: PhotosPickerItem?) {
-        guard let item = item else { return }
+    private func handleSelectedPhoto(_ image: UIImage) {
+        // Show processing spinner immediately
+        screenState = .processing
 
         Task {
             do {
-                // Load the image data
-                guard let data = try await item.loadTransferable(type: Data.self),
-                      let originalImage = UIImage(data: data) else {
-                    throw NSError(domain: "MeasureView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to load image"])
-                }
-
                 // Save image to temp file
                 let tempDir = FileManager.default.temporaryDirectory
                 let fileName = "photo_\(UUID().uuidString).jpg"
                 let fileURL = tempDir.appendingPathComponent(fileName)
 
-                guard let jpegData = originalImage.jpegData(compressionQuality: 0.9) else {
+                guard let jpegData = image.jpegData(compressionQuality: 0.9) else {
                     throw NSError(domain: "MeasureView", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to convert image"])
                 }
                 try jpegData.write(to: fileURL)
 
+                // Update image
                 await MainActor.run {
-                    cameraService.capturedImage = originalImage
+                    cameraService.capturedImage = image
                     cameraService.capturedImagePath = fileURL.path
-                    screenState = .processing
                 }
 
-                // Analyze image with Gemini (no MediaPipe overlay)
+                // Analyze image with Gemini
                 let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
                     imagePath: fileURL.path,
                     injuredKnee: userProfile?.injuredKnee,
@@ -406,13 +433,12 @@ struct MeasureView: View {
                 await MainActor.run {
                     poseResult = detectedPose
                     screenState = .result
-                    selectedPhotoItem = nil
                 }
             } catch {
                 await MainActor.run {
                     errorMessage = error.localizedDescription
                     showError = true
-                    selectedPhotoItem = nil
+                    screenState = .camera
                 }
             }
         }
@@ -423,7 +449,18 @@ struct MeasureView: View {
         cameraService.capturedImage = nil
         cameraService.capturedImagePath = nil
         screenState = .camera
-        selectedPhotoItem = nil
+    }
+
+    private func checkAndRequestReview() {
+        let dominated = saveCount == 2 || (saveCount > 2 && saveCount % 20 == 0)
+        guard dominated else { return }
+
+        let lastPrompt = Date(timeIntervalSince1970: lastReviewPromptDateInterval)
+        let daysSinceLastPrompt = Calendar.current.dateComponents([.day], from: lastPrompt, to: Date()).day ?? Int.max
+        guard daysSinceLastPrompt >= 90 else { return }
+
+        lastReviewPromptDateInterval = Date().timeIntervalSince1970
+        requestReview()
     }
 
     private func handleSave() {
@@ -445,11 +482,16 @@ struct MeasureView: View {
                 // Upload photo to Firebase Storage
                 var photoUrl = ""
                 if let image = cameraService.capturedImage {
-                    photoUrl = try await StorageService.shared.uploadImage(
-                        uid: uid,
-                        measurementId: measurementId,
-                        image: image
-                    )
+                    do {
+                        photoUrl = try await StorageService.shared.uploadImage(
+                            uid: uid,
+                            measurementId: measurementId,
+                            image: image
+                        )
+                    } catch {
+                        print("Photo upload failed: \(error)")
+                        // Continue saving measurement without photo
+                    }
                 }
 
                 let measurement = Measurement(
@@ -465,12 +507,58 @@ struct MeasureView: View {
 
                 await MainActor.run {
                     handleRetake() // Reset to camera view
+                    showSuccessBanner = true
+                    saveCount += 1
+                    checkAndRequestReview()
+                    // Auto-hide after 2 seconds
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        showSuccessBanner = false
+                    }
                 }
             } catch {
                 await MainActor.run {
                     screenState = .result
                     errorMessage = "Failed to save measurement: \(error.localizedDescription)"
                     showError = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - PHPicker Wrapper
+struct ImagePickerView: UIViewControllerRepresentable {
+    let onImagePicked: (UIImage) -> Void
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.filter = .images
+        config.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let parent: ImagePickerView
+
+        init(_ parent: ImagePickerView) { self.parent = parent }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            picker.dismiss(animated: true)
+
+            guard let provider = results.first?.itemProvider,
+                  provider.canLoadObject(ofClass: UIImage.self) else { return }
+
+            provider.loadObject(ofClass: UIImage.self) { image, _ in
+                guard let uiImage = image as? UIImage else { return }
+                DispatchQueue.main.async {
+                    self.parent.onImagePicked(uiImage)
                 }
             }
         }

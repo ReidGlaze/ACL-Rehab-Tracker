@@ -14,6 +14,25 @@ object DateHelpers {
         return (days / 7).toInt().coerceAtLeast(0)
     }
 
+    fun daysUntilSurgery(surgeryDate: Date?): Int {
+        if (surgeryDate == null) return 0
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.time
+        val surgery = Calendar.getInstance().apply {
+            time = surgeryDate
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.time
+        val diffMillis = surgery.time - today.time
+        return TimeUnit.MILLISECONDS.toDays(diffMillis).toInt()
+    }
+
     fun formatDate(date: Date): String {
         return SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(date)
     }

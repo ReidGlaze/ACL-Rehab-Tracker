@@ -10,7 +10,7 @@ PRODUCT_NAME = ACLRehabTracker
 PRODUCT_DISPLAY_NAME = ACL Rehab
 PRODUCT_BUNDLE_IDENTIFIER = com.reidglaze.ACLRehabTracker
 MARKETING_VERSION = 1.0
-CURRENT_PROJECT_VERSION = 1
+CURRENT_PROJECT_VERSION = 2
 
 // ==========================================
 // Platform Configuration
@@ -26,6 +26,9 @@ TARGETED_DEVICE_FAMILY = 1,2
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationLandscapeRight UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationPortrait
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationLandscapeRight UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
+INFOPLIST_KEY_NSCameraUsageDescription = ACL Rehab Tracker needs camera access to photograph your knee for angle measurement.
+INFOPLIST_KEY_NSPhotoLibraryUsageDescription = ACL Rehab Tracker needs photo library access so you can select knee photos for angle measurement.
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
 
 // ==========================================
 // Entitlements

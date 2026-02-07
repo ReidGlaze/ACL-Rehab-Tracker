@@ -26,6 +26,7 @@ fun WelcomeScreen(onContinue: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Background)
+            .navigationBarsPadding()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center

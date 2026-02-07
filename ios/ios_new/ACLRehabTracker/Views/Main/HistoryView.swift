@@ -11,19 +11,32 @@ struct HistoryView: View {
 
     @State private var measurements: [Measurement] = []
     @State private var filter: HistoryFilterType = .all
+    @State private var selectedWeek: Int? = nil
     @State private var selectedPhotoUrl: String?
     @State private var isLoading = true
     @State private var showPhotoModal = false
     @State private var loadedImage: UIImage?
     @State private var isLoadingPhoto = false
+    @State private var errorMessage: String?
+    @State private var measurementToDelete: Measurement?
+    @State private var showDeleteConfirmation = false
+    @State private var isDeleting = false
+
+    private var availableWeeks: [Int] {
+        Array(Set(measurements.map { $0.weekPostOp })).sorted()
+    }
 
     private var filteredMeasurements: [Measurement] {
         measurements.filter { measurement in
+            let typeMatch: Bool
             switch filter {
-            case .all: return true
-            case .extension: return measurement.type == .extension
-            case .flexion: return measurement.type == .flexion
+            case .all: typeMatch = true
+            case .extension: typeMatch = measurement.type == .extension
+            case .flexion: typeMatch = measurement.type == .flexion
             }
+
+            let weekMatch = selectedWeek == nil || measurement.weekPostOp == selectedWeek
+            return typeMatch && weekMatch
         }
     }
 
@@ -47,7 +60,13 @@ struct HistoryView: View {
             // Filter Pills
             filterPills
                 .padding(.horizontal, AppSpacing.lg)
-                .padding(.bottom, AppSpacing.md)
+                .padding(.bottom, AppSpacing.sm)
+
+            // Week Scroller
+            if !availableWeeks.isEmpty {
+                weekScroller
+                    .padding(.bottom, AppSpacing.md)
+            }
 
             // Content
             if isLoading {
@@ -67,6 +86,11 @@ struct HistoryView: View {
         }
         .task {
             await loadData()
+        }
+        .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -88,6 +112,40 @@ struct HistoryView: View {
         }
     }
 
+    // MARK: - Week Scroller
+    private var weekScroller: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: AppSpacing.sm) {
+                // "All" chip
+                Button(action: { selectedWeek = nil }) {
+                    Text("All")
+                        .font(AppTypography.caption1)
+                        .fontWeight(selectedWeek == nil ? .semibold : .regular)
+                        .foregroundColor(selectedWeek == nil ? AppColors.text : AppColors.textSecondary)
+                        .padding(.vertical, AppSpacing.xs)
+                        .padding(.horizontal, AppSpacing.md)
+                        .background(selectedWeek == nil ? AppColors.primary.opacity(0.3) : AppColors.surface)
+                        .cornerRadius(AppRadius.full)
+                }
+
+                // Week chips
+                ForEach(availableWeeks, id: \.self) { week in
+                    Button(action: { selectedWeek = week }) {
+                        Text("Wk \(week)")
+                            .font(AppTypography.caption1)
+                            .fontWeight(selectedWeek == week ? .semibold : .regular)
+                            .foregroundColor(selectedWeek == week ? AppColors.text : AppColors.textSecondary)
+                            .padding(.vertical, AppSpacing.xs)
+                            .padding(.horizontal, AppSpacing.md)
+                            .background(selectedWeek == week ? AppColors.primary.opacity(0.3) : AppColors.surface)
+                            .cornerRadius(AppRadius.full)
+                    }
+                }
+            }
+            .padding(.horizontal, AppSpacing.lg)
+        }
+    }
+
     // MARK: - Empty State
     private var emptyState: some View {
         VStack(spacing: AppSpacing.sm) {
@@ -104,31 +162,57 @@ struct HistoryView: View {
 
     // MARK: - Measurements List
     private var measurementsList: some View {
-        ScrollView {
-            LazyVStack(spacing: AppSpacing.lg) {
-                ForEach(groupedMeasurements, id: \.date) { group in
-                    VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                        Text(group.date.uppercased())
-                            .font(AppTypography.footnote)
-                            .foregroundColor(AppColors.textSecondary)
-                            .tracking(1)
-
-                        ForEach(group.items) { measurement in
-                            MeasurementRow(measurement: measurement) {
-                                if !measurement.photoUrl.isEmpty {
-                                    selectedPhotoUrl = measurement.photoUrl
-                                    showPhotoModal = true
-                                }
+        List {
+            ForEach(groupedMeasurements, id: \.date) { group in
+                Section {
+                    ForEach(group.items) { measurement in
+                        MeasurementRow(measurement: measurement) {
+                            if !measurement.photoUrl.isEmpty {
+                                selectedPhotoUrl = measurement.photoUrl
+                                showPhotoModal = true
                             }
                         }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                measurementToDelete = measurement
+                                showDeleteConfirmation = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: AppSpacing.lg, bottom: 4, trailing: AppSpacing.lg))
+                        .listRowSeparator(.hidden)
                     }
+                } header: {
+                    Text(group.date.uppercased())
+                        .font(AppTypography.footnote)
+                        .foregroundColor(AppColors.textSecondary)
+                        .tracking(1)
+                        .listRowInsets(EdgeInsets(top: 8, leading: AppSpacing.lg, bottom: 4, trailing: AppSpacing.lg))
                 }
             }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.bottom, AppSpacing.xl)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .refreshable {
             await loadData()
+        }
+        .confirmationDialog(
+            "Delete Measurement",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let measurement = measurementToDelete {
+                    deleteMeasurement(measurement)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                measurementToDelete = nil
+            }
+        } message: {
+            Text("This will permanently delete this measurement and its photo. This cannot be undone.")
         }
     }
 
@@ -204,6 +288,35 @@ struct HistoryView: View {
         }
     }
 
+    // MARK: - Delete
+    private func deleteMeasurement(_ measurement: Measurement) {
+        guard let uid = authService.currentUserId,
+              let measurementId = measurement.id else { return }
+
+        Task {
+            do {
+                // Delete photo from Storage if it exists
+                if !measurement.photoUrl.isEmpty {
+                    try? await StorageService.shared.deletePhoto(uid: uid, measurementId: measurementId)
+                }
+
+                // Delete measurement from Firestore
+                try await FirestoreService.shared.deleteMeasurement(uid: uid, measurementId: measurementId)
+
+                // Remove from local list
+                await MainActor.run {
+                    measurements.removeAll { $0.id == measurement.id }
+                    measurementToDelete = nil
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to delete measurement."
+                    measurementToDelete = nil
+                }
+            }
+        }
+    }
+
     // MARK: - Data Loading
     private func loadData() async {
         guard let uid = authService.currentUserId else {
@@ -220,6 +333,7 @@ struct HistoryView: View {
         } catch {
             print("Error loading measurements: \(error)")
             await MainActor.run {
+                errorMessage = "Failed to load history."
                 isLoading = false
             }
         }
@@ -231,28 +345,64 @@ struct MeasurementRow: View {
     let measurement: Measurement
     let onTap: () -> Void
 
+    @State private var thumbnailImage: UIImage?
+
     var body: some View {
         Button(action: onTap) {
-            HStack {
-                // Type Badge
-                Text(measurement.type.shortName)
-                    .font(AppTypography.caption1)
-                    .fontWeight(.semibold)
-                    .foregroundColor(AppColors.text)
-                    .padding(.vertical, AppSpacing.xs)
-                    .padding(.horizontal, AppSpacing.sm)
-                    .background(
-                        measurement.type == .extension
-                            ? AppColors.success.opacity(0.3)
-                            : AppColors.primary.opacity(0.3)
-                    )
+            HStack(spacing: AppSpacing.md) {
+                // Thumbnail
+                if !measurement.photoUrl.isEmpty {
+                    Group {
+                        if let image = thumbnailImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            Rectangle()
+                                .fill(AppColors.surfaceLight)
+                                .overlay(
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: AppColors.textTertiary))
+                                        .scaleEffect(0.7)
+                                )
+                        }
+                    }
+                    .frame(width: 56, height: 56)
                     .cornerRadius(AppRadius.sm)
+                    .clipped()
+                } else {
+                    // No photo placeholder
+                    Rectangle()
+                        .fill(AppColors.surfaceLight)
+                        .frame(width: 56, height: 56)
+                        .cornerRadius(AppRadius.sm)
+                        .overlay(
+                            Image(systemName: "camera.slash")
+                                .font(.system(size: 16))
+                                .foregroundColor(AppColors.textTertiary)
+                        )
+                }
 
-                // Angle and Time
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(measurement.angle)°")
-                        .font(AppTypography.title3)
-                        .foregroundColor(AppColors.text)
+                // Type Badge + Angle + Time
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: AppSpacing.sm) {
+                        Text(measurement.type.shortName)
+                            .font(AppTypography.caption1)
+                            .fontWeight(.semibold)
+                            .foregroundColor(AppColors.text)
+                            .padding(.vertical, AppSpacing.xs)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .background(
+                                measurement.type == .extension
+                                    ? AppColors.success.opacity(0.3)
+                                    : AppColors.primary.opacity(0.3)
+                            )
+                            .cornerRadius(AppRadius.sm)
+
+                        Text("\(measurement.angle)°")
+                            .font(AppTypography.title3)
+                            .foregroundColor(AppColors.text)
+                    }
 
                     Text(DateHelpers.formatTime(measurement.timestamp))
                         .font(AppTypography.caption1)
@@ -260,13 +410,6 @@ struct MeasurementRow: View {
                 }
 
                 Spacer()
-
-                // Photo indicator
-                if !measurement.photoUrl.isEmpty {
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(AppColors.primary)
-                }
 
                 // Week Badge
                 Text("Week \(measurement.weekPostOp)")
@@ -280,6 +423,15 @@ struct MeasurementRow: View {
             .padding(AppSpacing.md)
             .background(AppColors.surface)
             .cornerRadius(AppRadius.md)
+        }
+        .task(id: measurement.photoUrl) {
+            guard !measurement.photoUrl.isEmpty else { return }
+            do {
+                let image = try await StorageService.shared.downloadImage(from: measurement.photoUrl)
+                await MainActor.run { thumbnailImage = image }
+            } catch {
+                print("Thumbnail load failed: \(error)")
+            }
         }
     }
 }

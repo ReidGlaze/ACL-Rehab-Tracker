@@ -5,11 +5,14 @@ struct HomeView: View {
 
     @StateObject private var authService = AuthService.shared
     @State private var weekPostOp = 0
+    @State private var daysUntilSurgery = 0
     @State private var userName = ""
     @State private var latestExtension: Measurement?
     @State private var latestFlexion: Measurement?
     @State private var isLoading = true
     @State private var isRefreshing = false
+    @State private var showProfile = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -45,6 +48,19 @@ struct HomeView: View {
         .task {
             await loadData()
         }
+        .sheet(isPresented: $showProfile) {
+            ProfileView()
+        }
+        .onChange(of: showProfile) { _, isShowing in
+            if !isShowing {
+                Task { await loadData() }
+            }
+        }
+        .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     // MARK: - Header
@@ -63,31 +79,63 @@ struct HomeView: View {
             Spacer()
 
             // Avatar
-            Circle()
-                .fill(AppColors.surfaceLight)
-                .frame(width: 44, height: 44)
-                .overlay(
-                    Text(userName.isEmpty ? "?" : String(userName.prefix(1)).uppercased())
-                        .font(AppTypography.headline)
-                        .foregroundColor(AppColors.text)
-                )
+            Button { showProfile = true } label: {
+                Circle()
+                    .fill(AppColors.surfaceLight)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Text(userName.isEmpty ? "?" : String(userName.prefix(1)).uppercased())
+                            .font(AppTypography.headline)
+                            .foregroundColor(AppColors.text)
+                    )
+            }
+            .accessibilityLabel("Profile")
         }
     }
 
     // MARK: - Week Card
     private var weekCard: some View {
         VStack(spacing: 0) {
-            Text("Week")
-                .font(AppTypography.body)
-                .foregroundColor(AppColors.background.opacity(0.8))
+            if daysUntilSurgery > 0 {
+                // Surgery is in the future
+                Text("Surgery in")
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.background.opacity(0.8))
 
-            Text("\(weekPostOp)")
-                .font(.system(size: 72, weight: .bold))
-                .foregroundColor(AppColors.background)
+                Text("\(daysUntilSurgery)")
+                    .font(.system(size: 72, weight: .bold))
+                    .foregroundColor(AppColors.background)
 
-            Text("Post-Op Recovery")
-                .font(AppTypography.headline)
-                .foregroundColor(AppColors.background.opacity(0.9))
+                Text(daysUntilSurgery == 1 ? "Day" : "Days")
+                    .font(AppTypography.headline)
+                    .foregroundColor(AppColors.background.opacity(0.9))
+            } else if daysUntilSurgery == 0 && weekPostOp == 0 {
+                // Surgery day
+                Text("Week")
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.background.opacity(0.8))
+
+                Text("0")
+                    .font(.system(size: 72, weight: .bold))
+                    .foregroundColor(AppColors.background)
+
+                Text("Surgery Day")
+                    .font(AppTypography.headline)
+                    .foregroundColor(AppColors.background.opacity(0.9))
+            } else {
+                // Post-op
+                Text("Week")
+                    .font(AppTypography.body)
+                    .foregroundColor(AppColors.background.opacity(0.8))
+
+                Text("\(weekPostOp)")
+                    .font(.system(size: 72, weight: .bold))
+                    .foregroundColor(AppColors.background)
+
+                Text("Post-Op Recovery")
+                    .font(AppTypography.headline)
+                    .foregroundColor(AppColors.background.opacity(0.9))
+            }
         }
         .padding(AppSpacing.xl)
         .frame(maxWidth: .infinity)
@@ -131,6 +179,7 @@ struct HomeView: View {
                 await MainActor.run {
                     userName = profile.name
                     weekPostOp = DateHelpers.calculateWeekPostOp(from: profile.surgeryDate)
+                    daysUntilSurgery = DateHelpers.daysUntilSurgery(from: profile.surgeryDate)
                 }
             }
 
@@ -144,6 +193,7 @@ struct HomeView: View {
         } catch {
             print("Error loading home data: \(error)")
             await MainActor.run {
+                errorMessage = "Failed to load data. Pull to refresh to try again."
                 isLoading = false
             }
         }

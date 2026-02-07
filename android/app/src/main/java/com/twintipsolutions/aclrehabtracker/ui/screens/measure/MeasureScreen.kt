@@ -2,12 +2,18 @@ package com.twintipsolutions.aclrehabtracker.ui.screens.measure
 
 import android.Manifest
 import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +42,10 @@ import com.twintipsolutions.aclrehabtracker.data.service.StorageService
 import com.twintipsolutions.aclrehabtracker.ui.components.CameraPreview
 import com.twintipsolutions.aclrehabtracker.ui.theme.AppColors
 import com.twintipsolutions.aclrehabtracker.util.DateHelpers
+import android.app.Activity
+import com.google.android.play.core.review.ReviewManagerFactory
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 private enum class MeasureScreenState {
     CAMERA, PROCESSING, RESULT, SAVING
@@ -52,12 +61,54 @@ fun MeasureScreen() {
     var selectedType by remember { mutableStateOf(MeasurementType.EXTENSION) }
     var screenState by remember { mutableStateOf(MeasureScreenState.CAMERA) }
     var capturedImagePath by remember { mutableStateOf<String?>(null) }
+    var frozenPreviewBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var poseResult by remember { mutableStateOf<PoseResult?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
     var userProfile by remember { mutableStateOf<UserProfile?>(null) }
 
     val cameraService = remember { CameraService(context) }
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Photo picker launcher
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                try {
+                    errorMessage = null
+                    // Copy picked image to temp file
+                    val inputStream = context.contentResolver.openInputStream(it)
+                    val tempFile = java.io.File(context.cacheDir, "picked_${System.currentTimeMillis()}.jpg")
+                    inputStream?.use { input ->
+                        tempFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    capturedImagePath = tempFile.absolutePath
+                    screenState = MeasureScreenState.PROCESSING
+                    val result = GeminiPoseService.detectKneeAngle(
+                        imagePath = tempFile.absolutePath,
+                        injuredKnee = userProfile?.injuredKnee?.name?.lowercase(),
+                        injuryType = userProfile?.injuryType?.firestoreValue
+                    )
+                    poseResult = result
+                    screenState = MeasureScreenState.RESULT
+                } catch (e: Exception) {
+                    errorMessage = e.message ?: "Failed to analyze image"
+                    screenState = MeasureScreenState.CAMERA
+                }
+            }
+        }
+    }
+
+    fun handlePickFromLibrary() {
+        photoPickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
 
     LaunchedEffect(Unit) {
         val uid = AuthService.currentUserId ?: return@LaunchedEffect
@@ -78,8 +129,11 @@ fun MeasureScreen() {
     fun handleCapture() {
         scope.launch {
             try {
-                screenState = MeasureScreenState.PROCESSING
                 errorMessage = null
+                // Grab frozen frame from preview before switching to processing
+                frozenPreviewBitmap = cameraService.getPreviewBitmap()
+                // Show processing state immediately so user knows photo was taken
+                screenState = MeasureScreenState.PROCESSING
                 val path = cameraService.capturePhoto()
                 capturedImagePath = path
                 val result = GeminiPoseService.detectKneeAngle(
@@ -110,7 +164,10 @@ fun MeasureScreen() {
                 capturedImagePath?.let { path ->
                     try {
                         photoUrl = StorageService.uploadPhoto(uid, measurementId, path)
-                    } catch (_: Exception) { }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MeasureScreen", "Photo upload failed", e)
+                        // Continue saving measurement without photo
+                    }
                 }
 
                 val measurement = Measurement(
@@ -120,10 +177,32 @@ fun MeasureScreen() {
                     photoUrl = photoUrl
                 )
                 FirestoreService.saveMeasurement(uid, measurement)
-                // Reset
+                // Reset with success feedback
+                successMessage = "Measurement saved!"
                 screenState = MeasureScreenState.CAMERA
                 capturedImagePath = null
                 poseResult = null
+
+                // In-app review prompt
+                val prefs = context.getSharedPreferences("acl_rehab_prefs", android.content.Context.MODE_PRIVATE)
+                val newCount = prefs.getInt("measurement_save_count", 0) + 1
+                prefs.edit().putInt("measurement_save_count", newCount).apply()
+
+                val shouldPrompt = newCount == 2 || (newCount > 2 && newCount % 20 == 0)
+                if (shouldPrompt) {
+                    val lastPrompt = prefs.getLong("last_review_prompt_date", 0L)
+                    val daysSince = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - lastPrompt)
+                    if (daysSince >= 90) {
+                        prefs.edit().putLong("last_review_prompt_date", System.currentTimeMillis()).apply()
+                        try {
+                            val reviewManager = ReviewManagerFactory.create(context)
+                            val reviewInfo = reviewManager.requestReviewFlow().await()
+                            (context as? Activity)?.let { activity ->
+                                reviewManager.launchReviewFlow(activity, reviewInfo)
+                            }
+                        } catch (_: Exception) { /* Review flow is best-effort */ }
+                    }
+                }
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Failed to save"
                 screenState = MeasureScreenState.RESULT
@@ -135,41 +214,72 @@ fun MeasureScreen() {
         screenState = MeasureScreenState.CAMERA
         capturedImagePath = null
         poseResult = null
+        frozenPreviewBitmap = null
     }
 
-    Column(
+    // Show success snackbar
+    LaunchedEffect(successMessage) {
+        successMessage?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short)
+            successMessage = null
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Background)
     ) {
-        when (screenState) {
-            MeasureScreenState.CAMERA -> {
-                CameraView(
-                    selectedType = selectedType,
-                    onTypeChange = { selectedType = it },
-                    cameraPermissionGranted = cameraPermissionState.status.isGranted,
-                    onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
-                    cameraService = cameraService,
-                    onCapture = { handleCapture() },
-                    onFlipCamera = { cameraService.flipCamera(lifecycleOwner) },
-                    errorMessage = errorMessage,
-                    onDismissError = { errorMessage = null }
-                )
+        Column(modifier = Modifier.fillMaxSize()) {
+            when (screenState) {
+                MeasureScreenState.CAMERA, MeasureScreenState.PROCESSING -> {
+                    CameraView(
+                        selectedType = selectedType,
+                        onTypeChange = { selectedType = it },
+                        cameraPermissionGranted = cameraPermissionState.status.isGranted,
+                        onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
+                        cameraService = cameraService,
+                        onCapture = { handleCapture() },
+                        onPickFromLibrary = { handlePickFromLibrary() },
+                        onFlipCamera = { cameraService.flipCamera(lifecycleOwner) },
+                        isProcessing = screenState == MeasureScreenState.PROCESSING,
+                        capturedImagePath = capturedImagePath,
+                        frozenPreviewBitmap = frozenPreviewBitmap
+                    )
+                }
+                MeasureScreenState.RESULT, MeasureScreenState.SAVING -> {
+                    ResultView(
+                        imagePath = capturedImagePath,
+                        angle = poseResult?.angle ?: 0,
+                        goalAngle = selectedType.goalAngle,
+                        measurementType = selectedType,
+                        isSaving = screenState == MeasureScreenState.SAVING,
+                        onSave = { handleSave() },
+                        onRetake = { handleRetake() }
+                    )
+                }
             }
-            MeasureScreenState.PROCESSING -> {
-                ProcessingView(capturedImagePath)
-            }
-            MeasureScreenState.RESULT, MeasureScreenState.SAVING -> {
-                ResultView(
-                    imagePath = capturedImagePath,
-                    angle = poseResult?.angle ?: 0,
-                    goalAngle = selectedType.goalAngle,
-                    measurementType = selectedType,
-                    isSaving = screenState == MeasureScreenState.SAVING,
-                    onSave = { handleSave() },
-                    onRetake = { handleRetake() }
-                )
-            }
+        }
+
+        // Success snackbar
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        // Error dialog - at MeasureScreen level so it shows over any state
+        if (errorMessage != null) {
+            AlertDialog(
+                onDismissRequest = { errorMessage = null },
+                title = { Text("Error", color = AppColors.Text) },
+                text = { Text(errorMessage ?: "", color = AppColors.TextSecondary) },
+                confirmButton = {
+                    TextButton(onClick = { errorMessage = null }) {
+                        Text("OK", color = AppColors.Primary)
+                    }
+                },
+                containerColor = AppColors.Surface
+            )
         }
     }
 }
@@ -182,18 +292,23 @@ private fun CameraView(
     onRequestPermission: () -> Unit,
     cameraService: CameraService,
     onCapture: () -> Unit,
+    onPickFromLibrary: () -> Unit,
     onFlipCamera: () -> Unit,
-    errorMessage: String?,
-    onDismissError: () -> Unit
+    isProcessing: Boolean = false,
+    capturedImagePath: String? = null,
+    frozenPreviewBitmap: android.graphics.Bitmap? = null
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp)
     ) {
         // Header row
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 24.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -203,17 +318,6 @@ private fun CameraView(
                 fontWeight = FontWeight.Bold,
                 color = AppColors.Text
             )
-            // Flip camera button
-            if (cameraPermissionGranted) {
-                IconButton(
-                    onClick = onFlipCamera,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(AppColors.Surface, CircleShape)
-                ) {
-                    Text("↻", fontSize = 20.sp, color = AppColors.Text)
-                }
-            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -249,21 +353,57 @@ private fun CameraView(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Camera Preview or Permission Request
+        // Camera Preview or Permission Request - fills remaining space
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
+                .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(AppColors.Surface),
             contentAlignment = Alignment.Center
         ) {
             if (cameraPermissionGranted) {
+                // Always keep camera preview in the tree so the PreviewView doesn't flash
                 CameraPreview(
                     previewView = cameraService.getPreviewView(),
                     modifier = Modifier.fillMaxSize()
                 )
-            } else {
+                if (isProcessing) {
+                    // Layer captured/frozen image on top of live preview
+                    val displayBitmap = capturedImagePath?.let { path ->
+                        remember(path) { BitmapFactory.decodeFile(path) }
+                    } ?: frozenPreviewBitmap
+                    if (displayBitmap != null) {
+                        Image(
+                            bitmap = displayBitmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    // Dark overlay (fully opaque if no frozen frame to hide live feed)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(AppColors.Background.copy(alpha = if (displayBitmap != null) 0.6f else 0.85f))
+                    )
+                    // Spinner + text
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(40.dp),
+                            color = AppColors.Primary,
+                            strokeWidth = 3.dp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Analyzing...",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppColors.Text
+                        )
+                    }
+                }
+            } else if (!isProcessing) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
@@ -272,6 +412,14 @@ private fun CameraView(
                         text = "Camera access required",
                         color = AppColors.TextSecondary,
                         fontSize = 17.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "To photograph your knee for angle measurement",
+                        color = AppColors.TextTertiary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
@@ -285,7 +433,7 @@ private fun CameraView(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Instructions
         Text(
@@ -301,91 +449,90 @@ private fun CameraView(
                 .padding(horizontal = 16.dp)
         )
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Capture Button
-        if (cameraPermissionGranted) {
+        // Bottom controls: Library | Capture | Flip Camera
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Photo library picker (left)
+            IconButton(
+                onClick = onPickFromLibrary,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(AppColors.Surface, RoundedCornerShape(12.dp))
+            ) {
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(
+                        id = android.R.drawable.ic_menu_gallery
+                    ),
+                    contentDescription = "Pick from library",
+                    tint = AppColors.Text,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // Capture button (center)
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(AppColors.Background)
+                    .clickable(enabled = cameraPermissionGranted) { onCapture() },
                 contentAlignment = Alignment.Center
             ) {
+                // Outer ring
                 Box(
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
-                        .background(AppColors.Primary)
-                        .clickable { onCapture() },
+                        .background(AppColors.Text.copy(alpha = if (cameraPermissionGranted) 1f else 0.4f)),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Inner gap
                     Box(
                         modifier = Modifier
-                            .size(68.dp)
+                            .size(74.dp)
                             .clip(CircleShape)
-                            .background(AppColors.Primary)
-                    )
+                            .background(AppColors.Background),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Red fill
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (cameraPermissionGranted) AppColors.Primary
+                                    else AppColors.Primary.copy(alpha = 0.4f)
+                                )
+                        )
+                    }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
-    }
-
-    // Error dialog
-    if (errorMessage != null) {
-        AlertDialog(
-            onDismissRequest = onDismissError,
-            title = { Text("Error", color = AppColors.Text) },
-            text = { Text(errorMessage, color = AppColors.TextSecondary) },
-            confirmButton = {
-                TextButton(onClick = onDismissError) {
-                    Text("OK", color = AppColors.Primary)
-                }
-            },
-            containerColor = AppColors.Surface
-        )
-    }
-}
-
-@Composable
-private fun ProcessingView(imagePath: String?) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        // Show captured image as background
-        imagePath?.let { path ->
-            val bitmap = remember(path) { BitmapFactory.decodeFile(path) }
-            bitmap?.let {
-                Image(
-                    bitmap = it.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+            // Flip camera (right)
+            IconButton(
+                onClick = onFlipCamera,
+                enabled = cameraPermissionGranted,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(AppColors.Surface, RoundedCornerShape(12.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Switch camera",
+                    tint = if (cameraPermissionGranted) AppColors.Text else AppColors.Text.copy(alpha = 0.4f),
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
 
-        // Dark overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(AppColors.Background.copy(alpha = 0.7f))
-        )
-
-        // Loading indicator
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(48.dp),
-                color = AppColors.Primary,
-                strokeWidth = 3.dp
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Analyzing your knee angle...",
-                fontSize = 17.sp,
-                color = AppColors.Text
-            )
-        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -402,23 +549,25 @@ private fun ResultView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .navigationBarsPadding()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = "${measurementType.displayName} Result",
-            fontSize = 34.sp,
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = AppColors.Text
+            color = AppColors.Text,
+            modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Photo preview
+        // Photo preview - use weight to fill available space like iOS .fit
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
+                .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(AppColors.Surface),
             contentAlignment = Alignment.Center
@@ -436,32 +585,45 @@ private fun ResultView(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Angle display
-        Text(
-            text = "${angle}°",
-            fontSize = 64.sp,
-            fontWeight = FontWeight.Bold,
-            color = AppColors.Text
-        )
+        // Angle display card
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppColors.Surface)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "MEASURED ANGLE",
+                fontSize = 13.sp,
+                color = AppColors.TextSecondary,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${angle}°",
+                fontSize = 64.sp,
+                fontWeight = FontWeight.Bold,
+                color = AppColors.Text
+            )
+            Text(
+                text = "Goal: ${goalAngle}°",
+                fontSize = 17.sp,
+                color = AppColors.TextTertiary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "For personal tracking only. Not for medical diagnosis.",
+                fontSize = 12.sp,
+                color = AppColors.TextTertiary,
+                textAlign = TextAlign.Center
+            )
+        }
 
-        Text(
-            text = "${measurementType.displayName} • Goal: ${goalAngle}°",
-            fontSize = 17.sp,
-            color = AppColors.TextSecondary
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = "For personal tracking only. Not for medical diagnosis.",
-            fontSize = 12.sp,
-            color = AppColors.TextTertiary,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Buttons
         Row(

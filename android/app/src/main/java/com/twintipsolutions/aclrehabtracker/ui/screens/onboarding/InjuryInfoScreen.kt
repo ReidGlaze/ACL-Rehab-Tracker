@@ -31,6 +31,7 @@ fun InjuryInfoScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Background)
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(32.dp)
     ) {
@@ -128,13 +129,22 @@ fun InjuryInfoScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = type.displayName,
-                        fontSize = 17.sp,
-                        color = if (isSelected) AppColors.Text else AppColors.TextSecondary
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = type.displayName,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isSelected) AppColors.Text else AppColors.TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = type.description,
+                            fontSize = 13.sp,
+                            color = AppColors.TextTertiary
+                        )
+                    }
                     if (isSelected) {
-                        Text("✓", fontSize = 17.sp, color = AppColors.Primary)
+                        Text("✓", fontSize = 17.sp, color = AppColors.Success)
                     }
                 }
             }

@@ -52,4 +52,9 @@ class AuthService: ObservableObject {
     func signOut() throws {
         try Auth.auth().signOut()
     }
+
+    /// Delete current user account
+    func deleteUser() async throws {
+        try await Auth.auth().currentUser?.delete()
+    }
 }

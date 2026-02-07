@@ -32,6 +32,7 @@ fun NameInputScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Background)
+            .navigationBarsPadding()
             .padding(32.dp)
     ) {
         Spacer(modifier = Modifier.height(60.dp))

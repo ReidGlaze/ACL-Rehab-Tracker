@@ -75,4 +75,18 @@ class FirestoreService {
         let measurementRef = db.collection("users").document(uid).collection("measurements").document(measurementId)
         try await measurementRef.updateData(["photoUrl": photoUrl])
     }
+
+    /// Delete all user data (profile + measurements)
+    func deleteUserData(uid: String) async throws {
+        // Delete profile
+        let profileRef = db.collection("users").document(uid).collection("profile").document("info")
+        try await profileRef.delete()
+
+        // Delete all measurements
+        let measurementsRef = db.collection("users").document(uid).collection("measurements")
+        let snapshot = try await measurementsRef.getDocuments()
+        for document in snapshot.documents {
+            try await document.reference.delete()
+        }
+    }
 }

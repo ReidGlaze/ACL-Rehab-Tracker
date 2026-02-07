@@ -13,5 +13,5 @@
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 
 # Keep app data classes used with Firestore
--keep class com.twintipsolutions.aclrehabtracker.models.** { *; }
--keep class com.twintipsolutions.aclrehabtracker.services.** { *; }
+-keep class com.twintipsolutions.aclrehabtracker.data.model.** { *; }
+-keep class com.twintipsolutions.aclrehabtracker.data.service.** { *; }

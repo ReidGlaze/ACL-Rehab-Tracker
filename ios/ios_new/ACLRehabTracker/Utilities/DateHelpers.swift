@@ -4,9 +4,18 @@ struct DateHelpers {
     /// Calculate the number of weeks post-operation from the surgery date
     static func calculateWeekPostOp(from surgeryDate: Date) -> Int {
         let now = Date()
-        let diffTime = abs(now.timeIntervalSince(surgeryDate))
+        let diffTime = now.timeIntervalSince(surgeryDate)
+        guard diffTime > 0 else { return 0 }
         let diffDays = Int(diffTime / (60 * 60 * 24))
         return diffDays / 7
+    }
+
+    /// Calculate days until surgery (positive = future, 0 = today, negative = past)
+    static func daysUntilSurgery(from surgeryDate: Date) -> Int {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let surgery = calendar.startOfDay(for: surgeryDate)
+        return calendar.dateComponents([.day], from: today, to: surgery).day ?? 0
     }
 
     /// Format a date for display (e.g., "January 15, 2024")

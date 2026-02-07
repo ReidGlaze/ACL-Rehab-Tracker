@@ -5,6 +5,7 @@ struct RehabProgressView: View {
 
     @State private var measurements: [Measurement] = []
     @State private var isLoading = true
+    @State private var errorMessage: String?
 
     private var extensionMeasurements: [Measurement] {
         measurements.filter { $0.type == .extension }.sorted { $0.timestamp < $1.timestamp }
@@ -42,6 +43,11 @@ struct RehabProgressView: View {
         }
         .task {
             await loadData()
+        }
+        .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -197,6 +203,7 @@ struct RehabProgressView: View {
         } catch {
             print("Error loading measurements: \(error)")
             await MainActor.run {
+                errorMessage = "Failed to load progress data."
                 isLoading = false
             }
         }

@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var injuryType: InjuryType = .aclOnly
     @State private var surgeryDate = Date()
     @State private var selectedTab: MainTab = .home
+    @State private var errorMessage: String?
 
     var body: some View {
         Group {
@@ -49,6 +50,11 @@ struct ContentView: View {
         }
         .task {
             await ensureAuthenticated()
+        }
+        .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -150,6 +156,7 @@ struct ContentView: View {
             _ = try await authService.signInAnonymously()
         } catch {
             print("Auth error: \(error)")
+            errorMessage = "Unable to connect. Please check your internet connection and try again."
         }
     }
 
@@ -172,6 +179,10 @@ struct ContentView: View {
             }
         } catch {
             print("Error saving profile: \(error)")
+            // Still complete onboarding so user isn't stuck, profile can be re-saved later
+            await MainActor.run {
+                onboardingComplete = true
+            }
         }
     }
 

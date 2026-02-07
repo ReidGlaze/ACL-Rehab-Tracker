@@ -34,7 +34,7 @@ struct SurgeryDateView: View {
             DatePicker(
                 "Surgery Date",
                 selection: $surgeryDate,
-                in: Date(timeIntervalSince1970: 1577836800)...Date(), // Jan 1, 2020 to today
+                in: Date(timeIntervalSince1970: 1577836800)...Calendar.current.date(byAdding: .year, value: 1, to: Date())!, // Jan 1, 2020 to 1 year from now
                 displayedComponents: .date
             )
             .datePickerStyle(.wheel)

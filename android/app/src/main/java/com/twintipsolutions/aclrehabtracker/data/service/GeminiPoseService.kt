@@ -3,9 +3,12 @@ package com.twintipsolutions.aclrehabtracker.data.service
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
+import android.util.Log
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
 import com.twintipsolutions.aclrehabtracker.data.model.Keypoint
 import com.twintipsolutions.aclrehabtracker.data.model.PoseResult
+import com.google.firebase.functions.FirebaseFunctionsException
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -39,16 +42,47 @@ object GeminiPoseService {
         injuredKnee?.let { data["injuredKnee"] = it }
         injuryType?.let { data["injuryType"] = it }
 
-        val result = functions
-            .getHttpsCallable("analyzeKneeAngle")
-            .call(data)
-            .await()
+        // Ensure user is authenticated before calling Cloud Function
+        var user = FirebaseAuth.getInstance().currentUser
+        if (user == null) {
+            Log.d("GeminiPoseService", "No auth user, attempting sign-in...")
+            try {
+                AuthService.signInAnonymously()
+                user = FirebaseAuth.getInstance().currentUser
+            } catch (e: Exception) {
+                Log.e("GeminiPoseService", "Auth sign-in failed: ${e.message}", e)
+            }
+        }
+        Log.d("GeminiPoseService", "Auth state: uid=${user?.uid}, isAnon=${user?.isAnonymous}, base64Size=${base64.length}")
+
+        val result = try {
+            functions
+                .getHttpsCallable("analyzeKneeAngle")
+                .call(data)
+                .await()
+        } catch (e: FirebaseFunctionsException) {
+            Log.e("GeminiPoseService", "FirebaseFunctionsException: code=${e.code}, message=${e.message}, details=${e.details}", e)
+            throw when (e.code) {
+                FirebaseFunctionsException.Code.UNAUTHENTICATED ->
+                    Exception("Authentication error. Please restart the app and try again.")
+                FirebaseFunctionsException.Code.UNAVAILABLE ->
+                    Exception("AI service is temporarily unavailable. Please try again later.")
+                FirebaseFunctionsException.Code.DEADLINE_EXCEEDED ->
+                    Exception("Analysis took too long. Please try again with a clearer photo.")
+                else ->
+                    Exception("Could not analyze the photo. Please try again.")
+            }
+        } catch (e: Exception) {
+            Log.e("GeminiPoseService", "Exception: ${e.javaClass.name}: ${e.message}", e)
+            throw Exception("Could not analyze the photo. Please check your connection and try again.")
+        }
 
         @Suppress("UNCHECKED_CAST")
         val responseData = result.getData() as Map<String, Any>
 
-        val angle = (responseData["angle"] as? Number)?.toInt()
-            ?: throw Exception("No angle in response")
+        val rawAngle = (responseData["angle"] as? Number)?.toInt()
+            ?: throw Exception("AI could not detect knee angle. Please try repositioning your leg and take another photo.")
+        val angle = rawAngle.coerceIn(0, 180)
         val confidence = (responseData["confidence"] as? Number)?.toDouble() ?: 0.0
 
         @Suppress("UNCHECKED_CAST")
