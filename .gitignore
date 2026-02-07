@@ -60,6 +60,20 @@ functions/lib/
 firestore.rules
 storage.rules
 
+# Firebase config (contains API keys)
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Debug dumps & screenshots
+/dump*.xml
+/d[0-9]*.xml
+/window_dump.xml
+/screen*.png
+/screenshots/
+
+# Kotlin build errors
+android/.kotlin/
+
 # Environment
 .env
 .env.*
