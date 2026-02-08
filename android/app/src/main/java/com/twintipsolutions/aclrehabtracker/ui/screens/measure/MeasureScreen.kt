@@ -43,6 +43,10 @@ import com.twintipsolutions.aclrehabtracker.ui.components.CameraPreview
 import com.twintipsolutions.aclrehabtracker.ui.theme.AppColors
 import com.twintipsolutions.aclrehabtracker.util.DateHelpers
 import android.app.Activity
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import com.google.android.play.core.review.ReviewManagerFactory
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -57,6 +61,24 @@ fun MeasureScreen() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+
+    val vibrator = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
+    fun hapticClick() {
+        vibrator.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+    fun hapticSuccess() {
+        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+    fun hapticError() {
+        vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1))
+    }
 
     var selectedType by remember { mutableStateOf(MeasurementType.EXTENSION) }
     var screenState by remember { mutableStateOf(MeasureScreenState.CAMERA) }
@@ -127,6 +149,7 @@ fun MeasureScreen() {
     }
 
     fun handleCapture() {
+        hapticClick()
         scope.launch {
             try {
                 errorMessage = null
@@ -144,6 +167,7 @@ fun MeasureScreen() {
                 poseResult = result
                 screenState = MeasureScreenState.RESULT
             } catch (e: Exception) {
+                hapticError()
                 errorMessage = e.message ?: "Failed to analyze image"
                 screenState = MeasureScreenState.CAMERA
             }
@@ -178,6 +202,7 @@ fun MeasureScreen() {
                 )
                 FirestoreService.saveMeasurement(uid, measurement)
                 // Reset with success feedback
+                hapticSuccess()
                 successMessage = "Measurement saved!"
                 screenState = MeasureScreenState.CAMERA
                 capturedImagePath = null
@@ -192,7 +217,7 @@ fun MeasureScreen() {
                 if (shouldPrompt) {
                     val lastPrompt = prefs.getLong("last_review_prompt_date", 0L)
                     val daysSince = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - lastPrompt)
-                    if (daysSince >= 90) {
+                    if (daysSince >= 30) {
                         prefs.edit().putLong("last_review_prompt_date", System.currentTimeMillis()).apply()
                         try {
                             val reviewManager = ReviewManagerFactory.create(context)
@@ -204,6 +229,7 @@ fun MeasureScreen() {
                     }
                 }
             } catch (e: Exception) {
+                hapticError()
                 errorMessage = e.message ?: "Failed to save"
                 screenState = MeasureScreenState.RESULT
             }

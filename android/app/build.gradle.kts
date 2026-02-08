@@ -21,7 +21,7 @@ android {
         applicationId = "com.twintipsolutions.aclrehabtracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
+        versionCode = 4
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -88,6 +88,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.storage)
     implementation(libs.firebase.functions)
+    implementation(libs.firebase.analytics)
 
     // CameraX
     implementation(libs.camerax.core)

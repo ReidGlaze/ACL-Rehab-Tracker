@@ -373,6 +373,10 @@ struct MeasureView: View {
     }
 
     private func handleCapture() {
+        // Haptic feedback on capture
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+
         // Show processing state immediately so user knows photo was taken
         screenState = .processing
 
@@ -393,6 +397,8 @@ struct MeasureView: View {
                 }
             } catch {
                 await MainActor.run {
+                    let notification = UINotificationFeedbackGenerator()
+                    notification.notificationOccurred(.error)
                     errorMessage = error.localizedDescription
                     showError = true
                     screenState = .camera
@@ -457,7 +463,7 @@ struct MeasureView: View {
 
         let lastPrompt = Date(timeIntervalSince1970: lastReviewPromptDateInterval)
         let daysSinceLastPrompt = Calendar.current.dateComponents([.day], from: lastPrompt, to: Date()).day ?? Int.max
-        guard daysSinceLastPrompt >= 90 else { return }
+        guard daysSinceLastPrompt >= 30 else { return }
 
         lastReviewPromptDateInterval = Date().timeIntervalSince1970
         requestReview()
@@ -506,6 +512,10 @@ struct MeasureView: View {
                 _ = try await FirestoreService.shared.saveMeasurement(uid: uid, measurement: measurement)
 
                 await MainActor.run {
+                    // Success haptic
+                    let notification = UINotificationFeedbackGenerator()
+                    notification.notificationOccurred(.success)
+
                     handleRetake() // Reset to camera view
                     showSuccessBanner = true
                     saveCount += 1
@@ -518,6 +528,8 @@ struct MeasureView: View {
                 }
             } catch {
                 await MainActor.run {
+                    let notification = UINotificationFeedbackGenerator()
+                    notification.notificationOccurred(.error)
                     screenState = .result
                     errorMessage = "Failed to save measurement: \(error.localizedDescription)"
                     showError = true

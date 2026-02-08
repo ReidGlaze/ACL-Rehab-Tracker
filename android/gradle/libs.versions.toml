@@ -35,6 +35,7 @@ firebase-auth = { group = "com.google.firebase", name = "firebase-auth-ktx" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore-ktx" }
 firebase-storage = { group = "com.google.firebase", name = "firebase-storage-ktx" }
 firebase-functions = { group = "com.google.firebase", name = "firebase-functions-ktx" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics-ktx" }
 
 # CameraX
 camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }

@@ -10,7 +10,7 @@ PRODUCT_NAME = ACLRehabTracker
 PRODUCT_DISPLAY_NAME = ACL Rehab
 PRODUCT_BUNDLE_IDENTIFIER = com.reidglaze.ACLRehabTracker
 MARKETING_VERSION = 1.0
-CURRENT_PROJECT_VERSION = 2
+CURRENT_PROJECT_VERSION = 4
 
 // ==========================================
 // Platform Configuration

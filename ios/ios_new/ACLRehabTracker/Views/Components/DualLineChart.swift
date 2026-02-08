@@ -14,9 +14,9 @@ struct DualLineChart: View {
 
     private let chartPadding = EdgeInsets(top: 30, leading: 50, bottom: 50, trailing: 20)
 
-    // Y-axis range: 0° to 140° to show both extension and flexion
-    private let yMin: CGFloat = -5
-    private let yMax: CGFloat = 145
+    // Y-axis range: 0° to 135° — matches label positions exactly
+    private let yMin: CGFloat = 0
+    private let yMax: CGFloat = 135
 
     // Colors
     private let extensionColor = Color(hex: "4A9EFF") // Blue
@@ -111,7 +111,7 @@ struct DualLineChart: View {
             let innerWidth = width - chartPadding.leading - chartPadding.trailing
             let innerHeight = height - chartPadding.top - chartPadding.bottom
 
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 // Grid lines
                 gridLines(innerWidth: innerWidth, innerHeight: innerHeight)
                     .offset(x: chartPadding.leading, y: chartPadding.top)

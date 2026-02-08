@@ -288,7 +288,7 @@ private fun DualLineChart(
         } else {
             val allData = extensionData + flexionData
             val maxDay = allData.maxOfOrNull { it.first } ?: 1f
-            val yMax = 145f
+            val yMax = 135f
 
             Canvas(
                 modifier = Modifier

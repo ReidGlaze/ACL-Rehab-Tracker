@@ -22,7 +22,7 @@ import kotlin.coroutines.suspendCoroutine
 class CameraService(private val context: Context) {
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
-    private var isUsingFrontCamera = true
+    private var isUsingFrontCamera = false
     private var previewView: PreviewView? = null
 
     fun getPreviewView(): PreviewView {
