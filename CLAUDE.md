@@ -4,10 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ACL Rehab Tracker - A multi-platform application for tracking ACL rehabilitation progress.
+ACL Rehab Tracker - A multi-platform mobile app for tracking ACL rehabilitation progress using AI-powered knee angle measurement.
 
 ## Project Structure
 
-- `ios/` - iOS native application
-- `android/` - Android native application
-- `web/` - Web application
+- `ios/ios_new/` - iOS app (Swift/SwiftUI)
+- `android/` - Android app (Kotlin/Jetpack Compose)
+- `functions/` - Firebase Cloud Functions (TypeScript)
+- `web/` - Landing page / marketing site
+
+## Backend
+
+- Firebase project: `acl-rehab-d3e88`
+- Auth: Anonymous Firebase Auth
+- Database: Cloud Firestore
+- Storage: Firebase Storage (photo uploads)
+- AI: Gemini via Cloud Function (`analyzeKneeAngle`)
