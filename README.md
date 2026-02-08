@@ -1,8 +1,6 @@
 # ACL Rehab Tracker
 
-A mobile app that helps ACL surgery patients track their rehabilitation progress using AI-powered knee angle measurement.
-
-Available on the [App Store](https://apps.apple.com/app/acl-rehab-tracker/id6745041257) and [Google Play](https://play.google.com/store/apps/details?id=com.twintipsolutions.aclrehabtracker).
+A mobile app that helps ACL surgery patients track their rehabilitation progress using AI-powered knee angle measurement. Available for iOS and Android.
 
 ## What It Does
 
