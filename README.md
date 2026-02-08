@@ -25,7 +25,7 @@ Available on the [App Store](https://apps.apple.com/app/acl-rehab-tracker/id6745
 
 ```
 .
-├── ios/ios_new/      # iOS app (SwiftUI)
+├── ios/              # iOS app (SwiftUI)
 ├── android/          # Android app (Jetpack Compose)
 ├── functions/        # Firebase Cloud Functions (TypeScript)
 └── web/              # Landing page
@@ -45,7 +45,7 @@ Available on the [App Store](https://apps.apple.com/app/acl-rehab-tracker/id6745
 Requires Xcode 15+ and CocoaPods.
 
 ```bash
-cd ios/ios_new
+cd ios
 pod install
 open ACLRehabTracker.xcworkspace
 ```

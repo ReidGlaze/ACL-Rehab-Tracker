@@ -8,7 +8,7 @@ ACL Rehab Tracker - A multi-platform mobile app for tracking ACL rehabilitation 
 
 ## Project Structure
 
-- `ios/ios_new/` - iOS app (Swift/SwiftUI)
+- `ios/` - iOS app (Swift/SwiftUI)
 - `android/` - Android app (Kotlin/Jetpack Compose)
 - `functions/` - Firebase Cloud Functions (TypeScript)
 - `web/` - Landing page / marketing site

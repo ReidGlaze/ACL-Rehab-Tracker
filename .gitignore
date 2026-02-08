@@ -18,43 +18,24 @@ xcuserdata/
 # =====================
 # Legacy / Deprecated
 # =====================
-# React Native prototype (replaced by native SwiftUI)
-ios/.bundle/
-ios/.eslintrc.js
-ios/.gitignore
-ios/.prettierrc.js
-ios/.watchmanconfig
-ios/App.tsx
-ios/Gemfile
-ios/README.md
-ios/__tests__/
-ios/android/
-ios/app.json
-ios/babel.config.js
-ios/index.js
-ios/ios/
-ios/jest.config.js
-ios/metro.config.js
-ios/node_modules/
-ios/package.json
-ios/package-lock.json
-ios/src/
-ios/tsconfig.json
-
 # Old SwiftUI repo (migrated into this monorepo)
 swiftui/
+
+# Legacy React Native files (still on disk, not tracked)
+_legacy_react_native/
 
 # Design / test assets
 design_examples/
 test_images/
 
 # =====================
-# iOS (SwiftUI app)
+# iOS
 # =====================
-ios/ios_new/Pods/
-ios/ios_new/.build/
-ios/ios_new/ACLRehabTracker.xcarchive/
-ios/ios_new/ExportOptions.plist
+ios/Pods/
+ios/.build/
+ios/ACLRehabTracker.xcarchive/
+ios/ExportOptions.plist
+ios/node_modules/
 
 # =====================
 # Android
