@@ -2,6 +2,9 @@ import SwiftUI
 
 struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    private let privacyPolicyURL = URL(string: "https://aclrehabtracker.vercel.app/privacy")!
 
     @State private var name = ""
     @State private var injuredKnee: KneeSide = .right
@@ -9,7 +12,6 @@ struct ProfileView: View {
     @State private var surgeryDate = Date()
     @State private var isLoading = true
     @State private var isSaving = false
-    @State private var showPrivacyPolicy = false
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
@@ -140,12 +142,16 @@ struct ProfileView: View {
 
                         // Privacy Policy Link
                         Button {
-                            showPrivacyPolicy = true
+                            openURL(privacyPolicyURL)
                         } label: {
-                            Text("Privacy Policy")
-                                .font(AppTypography.footnote)
-                                .foregroundColor(AppColors.textSecondary)
-                                .underline()
+                            HStack(spacing: 4) {
+                                Text("Privacy Policy")
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 10))
+                            }
+                            .font(AppTypography.footnote)
+                            .foregroundColor(AppColors.textSecondary)
+                            .underline()
                         }
                         .padding(.top, AppSpacing.sm)
 
@@ -176,9 +182,6 @@ struct ProfileView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
-            }
-            .sheet(isPresented: $showPrivacyPolicy) {
-                PrivacyPolicyView()
             }
             .task {
                 await loadProfile()

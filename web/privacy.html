@@ -22,7 +22,7 @@
     <div class="container">
         <div class="legal">
             <h1>Privacy Policy</h1>
-            <p class="last-updated">Last updated: February 5, 2025</p>
+            <p class="last-updated">Last updated: February 10, 2026</p>
 
             <p>Twin Tip Solutions ("we", "our", or "us") operates the ACL Rehab mobile application (the "App"). This Privacy Policy explains how we collect, use, and protect your information when you use our App.</p>
 
@@ -60,30 +60,40 @@
             <p>Data is stored securely and is associated with your anonymous user identifier. We do not sell, rent, or share your data with any third parties.</p>
 
             <h2>5. Camera Usage</h2>
-            <p>The App requests access to your device's camera to take photos of your knee for angle measurement. Camera access is used exclusively for this purpose. Photos are uploaded to our secure servers for AI analysis and are not shared with any third parties.</p>
+            <p>The App requests access to your device's camera to take photos of your knee for angle measurement. Camera access is used exclusively for this purpose.</p>
 
-            <h2>6. Third-Party Services</h2>
+            <h2>6. AI Knee Angle Analysis</h2>
+            <p>When you submit a knee photo for angle measurement, the following data is sent to <strong>Google's Vertex AI (Gemini model)</strong> service via a secure Google Cloud Function:</p>
+            <ul>
+                <li><strong>Your knee photo</strong> (image data)</li>
+                <li><strong>Your injured knee side</strong> (left or right)</li>
+                <li><strong>Your injury type</strong> (e.g., ACL reconstruction)</li>
+            </ul>
+            <p>This data is used solely to estimate your knee angle. The photo is analyzed in real time and is <strong>not stored or retained</strong> by Google's Vertex AI (Gemini model) service after processing. Google processes this data under their <a href="https://cloud.google.com/terms/data-processing-addendum" target="_blank" rel="noopener">Cloud data processing terms</a>.</p>
+            <p>Before your first AI analysis, the App will ask for your explicit consent to share this data with Google's Vertex AI (Gemini model) service.</p>
+
+            <h2>7. Third-Party Services</h2>
             <p>The App uses the following third-party services:</p>
             <ul>
-                <li><strong>Google Firebase</strong> &mdash; For authentication, data storage, and cloud functions. Firebase's privacy policy can be found at <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">firebase.google.com/support/privacy</a>.</li>
-                <li><strong>Google Gemini AI</strong> &mdash; For processing knee photos and estimating angles via a cloud function. Photos are sent to Google's AI service for analysis only.</li>
+                <li><strong>Google Firebase</strong> &mdash; For anonymous authentication, data storage, and cloud functions. Firebase's privacy policy can be found at <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">firebase.google.com/support/privacy</a>.</li>
+                <li><strong>Google Vertex AI (Gemini model)</strong> &mdash; For processing knee photos and estimating angles. Google acts as a data processor and does not retain your photos after analysis. See Section 6 for full details.</li>
             </ul>
-            <p>We do not integrate any advertising networks, analytics SDKs, or other third-party tracking services.</p>
+            <p>Apart from these services, we do not sell, share, or distribute your data to any other third parties. We do not integrate any advertising networks, analytics SDKs, or other third-party tracking services.</p>
 
-            <h2>7. Data Retention and Deletion</h2>
+            <h2>8. Data Retention and Deletion</h2>
             <p>Your data is retained as long as you use the App. If you wish to delete your data:</p>
             <ul>
                 <li>You can delete the App from your device, which will remove your local session.</li>
                 <li>To request complete deletion of your data from our servers, contact us at <a href="mailto:reid@twintipsolutions.com">reid@twintipsolutions.com</a> with the subject line "Data Deletion Request."</li>
             </ul>
 
-            <h2>8. Children's Privacy</h2>
+            <h2>9. Children's Privacy</h2>
             <p>The App is not directed at children under the age of 13. We do not knowingly collect information from children under 13. If you believe we have inadvertently collected such information, please contact us and we will promptly delete it.</p>
 
-            <h2>9. Changes to This Policy</h2>
+            <h2>10. Changes to This Policy</h2>
             <p>We may update this Privacy Policy from time to time. Any changes will be reflected on this page with an updated "Last updated" date. We encourage you to review this page periodically.</p>
 
-            <h2>10. Contact Us</h2>
+            <h2>11. Contact Us</h2>
             <p>If you have any questions about this Privacy Policy or your data, please contact us at:</p>
             <p><a href="mailto:reid@twintipsolutions.com">reid@twintipsolutions.com</a></p>
         </div>

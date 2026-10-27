@@ -11,10 +11,11 @@
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "lib/index.js",
   "dependencies": {
+    "@anthropic-ai/vertex-sdk": "^0.14.4",
     "@google/genai": "^1.37.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "firebase-admin": "^13.0.0",

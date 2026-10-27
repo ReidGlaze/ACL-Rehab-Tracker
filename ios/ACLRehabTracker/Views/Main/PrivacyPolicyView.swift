@@ -7,7 +7,7 @@ struct PrivacyPolicyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Last updated: February 5, 2026")
+                    Text("Last updated: February 10, 2026")
                         .font(AppTypography.caption1)
                         .foregroundColor(AppColors.textSecondary)
 
@@ -36,16 +36,29 @@ struct PrivacyPolicyView: View {
 
                     section(title: "AI Knee Angle Analysis") {
                         """
-                        When you submit a photo for angle measurement, it is sent to a Google Cloud \
-                        Function that uses the Gemini AI model to estimate your knee angle. The photo \
-                        is processed in real time and is not retained by the AI service after analysis.
+                        When you submit a photo for angle measurement, the following data is sent \
+                        to Google's Vertex AI (Gemini model) via a secure Google Cloud Function:
+
+                        • Your knee photo (image data)
+                        • Your injured knee side (left or right)
+                        • Your injury type (e.g., ACL reconstruction)
+
+                        This data is used solely to estimate your knee angle. The photo is analyzed \
+                        in real time and is not stored or retained by Google's Vertex AI (Gemini model) \
+                        after processing. Google processes this data under their Cloud data \
+                        processing terms.
                         """
                     }
 
-                    section(title: "Third-Party Sharing") {
+                    section(title: "Third-Party Data Processing") {
                         """
-                        We do not sell, share, or distribute your data to any third parties. Your \
-                        rehabilitation data is used solely to provide you with the app's features.
+                        Your knee photos and injury details are sent to Google for AI-powered \
+                        angle analysis using their Vertex AI (Gemini model). Google acts as a data \
+                        processor and does not retain your photos after analysis.
+
+                        Apart from this AI processing, we do not sell, share, or distribute \
+                        your data to any other third parties. Your rehabilitation data is used \
+                        solely to provide you with the app's features.
                         """
                     }
 

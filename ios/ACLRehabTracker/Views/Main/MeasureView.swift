@@ -27,6 +27,14 @@ struct MeasureView: View {
     @State private var showSuccessBanner = false
     @AppStorage("measurementSaveCount") private var saveCount = 0
     @AppStorage("lastReviewPromptDate") private var lastReviewPromptDateInterval: Double = 0
+    @AppStorage("aiAnalysisConsented") private var aiAnalysisConsented = false
+    @State private var showConsentSheet = false
+    @State private var pendingAction: PendingAction?
+
+    enum PendingAction {
+        case capture
+        case photoPicker
+    }
 
     var body: some View {
         Group {
@@ -68,6 +76,24 @@ struct MeasureView: View {
             ImagePickerView { image in
                 handleSelectedPhoto(image)
             }
+        }
+        .sheet(isPresented: $showConsentSheet) {
+            AIConsentView(
+                onAgree: {
+                    aiAnalysisConsented = true
+                    let action = pendingAction
+                    pendingAction = nil
+                    showConsentSheet = false
+                    if action == .photoPicker {
+                        showPhotoPicker = true
+                    }
+                },
+                onCancel: {
+                    pendingAction = nil
+                    showConsentSheet = false
+                }
+            )
+            .presentationDetents([.large])
         }
     }
 
@@ -115,7 +141,14 @@ struct MeasureView: View {
     private var cameraControls: some View {
         HStack {
             // Photo Library picker (left)
-            Button(action: { showPhotoPicker = true }) {
+            Button(action: {
+                if aiAnalysisConsented {
+                    showPhotoPicker = true
+                } else {
+                    pendingAction = .photoPicker
+                    showConsentSheet = true
+                }
+            }) {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 24, weight: .medium))
                     .foregroundColor(AppColors.text)
@@ -128,7 +161,14 @@ struct MeasureView: View {
             Spacer()
 
             // Capture button (center)
-            Button(action: handleCapture) {
+            Button(action: {
+                if aiAnalysisConsented {
+                    handleCapture()
+                } else {
+                    pendingAction = .capture
+                    showConsentSheet = true
+                }
+            }) {
                 ZStack {
                     Circle()
                         .stroke(AppColors.text, lineWidth: 4)

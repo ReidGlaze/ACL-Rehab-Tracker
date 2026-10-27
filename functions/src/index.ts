@@ -1,15 +1,13 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import AnthropicVertex from "@anthropic-ai/vertex-sdk";
 import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
-// Initialize Google GenAI with Vertex AI
-// Gemini 3 models require the global endpoint
-const ai = new GoogleGenAI({
-  vertexai: true,
-  project: process.env.GCLOUD_PROJECT || "acl-rehab-d3e88",
-  location: "global",
+// Initialize Anthropic client via Vertex AI
+const anthropic = new AnthropicVertex({
+  projectId: process.env.GCLOUD_PROJECT || "acl-rehab-d3e88",
+  region: "us-east5",
 });
 
 interface AnalyzeKneeAngleRequest {
@@ -33,13 +31,13 @@ interface AnalyzeKneeAngleResponse {
 }
 
 /**
- * Analyze a leg image and return the knee angle using Vertex AI
+ * Analyze a leg image and return the knee angle using Claude Opus 4.6 via Vertex AI
  */
 export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
   {
     region: "us-central1",
     memory: "512MiB",
-    timeoutSeconds: 120, // Extended for HIGH thinking mode
+    timeoutSeconds: 120,
   },
   async (request): Promise<AnalyzeKneeAngleResponse> => {
     // Require authentication
@@ -74,90 +72,87 @@ export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
     }
 
     // Different prompts for single vs dual image
-    const singleImagePrompt = `Measure the knee flexion angle in this photo of a leg.
+    const measurementInstructions = `You are measuring knee FLEXION angle for ACL rehabilitation.
 
-Look at the angle formed at the KNEE JOINT between:
-- The THIGH (femur) - from hip to knee
-- The SHIN (tibia) - from knee to ankle
+HOW TO MEASURE:
+1. Find the HIP joint (or top of thigh if hip is hidden)
+2. Find the KNEE joint center
+3. Find the ANKLE joint
+4. The geometric angle at the knee (between thigh line and shin line) is ~180° when straight, ~90° when bent to an L-shape
+5. FLEXION ANGLE = 180 minus that geometric angle
 
-MEDICAL CONVENTION:
-- 0° = leg is completely STRAIGHT (thigh and shin form a straight line)
-- 45° = moderate bend
-- 90° = right angle (L-shape)
-- 135° = deeply bent (heel near buttock)
+FLEXION SCALE:
+- 0° = fully straight (thigh and shin in a straight line)
+- 45° = slightly bent
+- 90° = L-shape, thigh and shin perpendicular
+- 120°+ = deep bend, heel near buttock
 
-IMPORTANT: Focus on the actual bend at the knee joint. If the leg looks straight, it IS close to 0°.${injuryContext}
+IMPORTANT: Do NOT measure the shin's angle relative to the floor or any other reference. Measure the bend AT the knee joint between the thigh and shin segments.
 
-Return ONLY valid JSON: {"angle":N,"confidence":C}`;
+Account for camera perspective and foreshortening. Be precise to the nearest degree.${injuryContext}
 
-    const dualImagePrompt = `Measure the knee flexion angle using these TWO photos of the same leg.
+Return ONLY valid JSON: {"angle":N,"reasoning":"brief explanation"}`;
 
-Look at the angle formed at the KNEE JOINT between:
-- The THIGH (femur) - from hip to knee
-- The SHIN (tibia) - from knee to ankle
+    const singleImagePrompt = measurementInstructions;
 
-Use both images to get a better understanding of the true angle.
-
-MEDICAL CONVENTION:
-- 0° = leg is completely STRAIGHT (thigh and shin form a straight line)
-- 45° = moderate bend
-- 90° = right angle (L-shape)
-- 135° = deeply bent (heel near buttock)${injuryContext}
-
-Return ONLY valid JSON: {"angle":N,"confidence":C}`;
+    const dualImagePrompt = `Use both photos of the same leg for better accuracy.\n\n${measurementInstructions}`;
 
     const prompt = imageBase64_2 ? dualImagePrompt : singleImagePrompt;
 
-    // Build image parts
-    const imageParts: Array<{ inlineData: { data: string; mimeType: string } } | { text: string }> = [
+    // Build message content with images
+    const content: Array<{ type: "image"; source: { type: "base64"; media_type: "image/jpeg"; data: string } } | { type: "text"; text: string }> = [
       {
-        inlineData: {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/jpeg",
           data: imageBase64,
-          mimeType: "image/jpeg",
         },
       },
     ];
 
     if (imageBase64_2) {
-      imageParts.push({
-        inlineData: {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/jpeg",
           data: imageBase64_2,
-          mimeType: "image/jpeg",
         },
       });
     }
 
-    imageParts.push({ text: prompt });
+    content.push({ type: "text", text: prompt });
 
     try {
       const startTime = Date.now();
-      console.log("Starting Gemini analysis with HIGH thinking...");
+      console.log("Starting Claude Opus 4.6 analysis...");
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
+      const response = await anthropic.messages.create({
+        model: "claude-opus-4-6",
+        max_tokens: 16000,
+        thinking: {
+          type: "enabled",
+          budget_tokens: 10000,
+        },
+        messages: [
           {
             role: "user",
-            parts: imageParts,
+            content: content,
           },
         ],
-        config: {
-          temperature: 0.1, // Low temperature for consistent output
-          maxOutputTokens: 4096,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.HIGH, // High thinking for better 3D geometry reasoning
-          },
-        },
       });
 
       const elapsedMs = Date.now() - startTime;
-      console.log(`Gemini response received in ${elapsedMs}ms (${(elapsedMs/1000).toFixed(1)}s)`);
+      console.log(`Claude response received in ${elapsedMs}ms (${(elapsedMs / 1000).toFixed(1)}s)`);
 
-      let text = response.text;
+      // Extract text from response (skip thinking blocks)
+      const textBlock = response.content.find((block: { type: string }) => block.type === "text");
+      let text = textBlock && "text" in textBlock ? textBlock.text : null;
       console.log("AI Response:", text);
 
       if (!text) {
-        throw new HttpsError("internal", "No response from Vertex AI");
+        throw new HttpsError("internal", "No response from Claude");
       }
 
       // Strip markdown code blocks if present
@@ -171,7 +166,6 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
         throw new HttpsError("internal", "Invalid response format from AI: " + text.substring(0, 200));
       }
 
-      // Try to parse, if truncated we'll catch the error
       let parsed;
       try {
         parsed = JSON.parse(jsonMatch[0]);
@@ -184,9 +178,14 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
         throw new HttpsError("failed-precondition", parsed.error);
       }
 
-      // Validate response structure - only angle is required now
+      // Validate response structure - only angle is required
       if (typeof parsed.angle !== "number") {
         throw new HttpsError("internal", "Invalid response structure from AI");
+      }
+
+      // Log reasoning for debugging
+      if (parsed.reasoning) {
+        console.log("AI reasoning:", parsed.reasoning);
       }
 
       return {
@@ -198,7 +197,8 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
         ankle: { x: 0, y: 0 },
       };
     } catch (error) {
-      console.error("Vertex AI error:", error);
+      console.error("Claude AI error:", error);
+      console.error("Claude error detail:", JSON.stringify(error, Object.getOwnPropertyNames(error ?? {})));
 
       if (error instanceof HttpsError) {
         throw error;
@@ -206,7 +206,7 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
 
       // Check for rate limit error
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("exhausted")) {
+      if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("rate")) {
         throw new HttpsError(
           "resource-exhausted",
           "Too many requests. Please wait a moment and try again."
