@@ -91,3 +91,10 @@ play_store_*.png
 
 # Review screenshots
 web-*.png
+
+# Local model testing and build output
+ios/build/
+ios/.bundle/
+**/GoogleService-Test.plist
+functions/.env*
+*.log

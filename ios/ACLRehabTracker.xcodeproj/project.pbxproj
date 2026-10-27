@@ -436,7 +436,7 @@
 				DEVELOPMENT_TEAM = 9799CRLPN9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "ACL Rehab";
+				INFOPLIST_KEY_CFBundleDisplayName = "ACL Rehab Test";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to track your leg position for angle measurements.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs photo library access to select knee photos for angle measurement.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -450,7 +450,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.twintipsolutions.ACLRehabTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = com.twintipsolutions.ACLRehabTracker.test;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG ACL_MODEL_TEST";
+				EXCLUDED_SOURCE_FILE_NAMES = "GoogleService-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -468,6 +470,7 @@
 				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 9799CRLPN9;
 				ENABLE_PREVIEWS = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "GoogleService-Test.plist";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "ACL Rehab";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to track your leg position for angle measurements.";

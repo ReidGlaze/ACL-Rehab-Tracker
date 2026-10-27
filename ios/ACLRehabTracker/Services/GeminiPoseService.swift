@@ -15,7 +15,7 @@ class GeminiPoseService {
     ///   - injuredKnee: Which knee is injured (left/right) - helps AI identify correct leg
     ///   - injuryType: Type of injury for context
     /// - Returns: PoseResult with the detected angle
-    func detectKneeAngle(image: UIImage, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil) async throws -> PoseResult {
+    func detectKneeAngle(image: UIImage, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle") async throws -> PoseResult {
         // Resize image if too large
         let resizedImage = resizeImageIfNeeded(image, maxDimension: 1024)
 
@@ -38,7 +38,10 @@ class GeminiPoseService {
 
         // Call the Cloud Function
         do {
-            let callable = functions.httpsCallable("analyzeKneeAngle")
+            let callable = functions.httpsCallable(functionName)
+            #if ACL_MODEL_TEST
+            callable.timeoutInterval = 120
+            #endif
             let result = try await callable.call(requestData)
 
             guard let data = result.data as? [String: Any] else {
@@ -55,6 +58,8 @@ class GeminiPoseService {
                 switch code {
                 case .unauthenticated:
                     throw GeminiPoseError.detectionFailed("Authentication error. Please restart the app and try again.")
+                case .permissionDenied:
+                    throw GeminiPoseError.detectionFailed("This test account is not enabled yet. Share the tester UID with your developer.")
                 case .unavailable:
                     throw GeminiPoseError.detectionFailed("AI service is temporarily unavailable. Please try again later.")
                 case .deadlineExceeded:

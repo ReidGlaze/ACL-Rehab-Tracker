@@ -220,3 +220,5 @@ Return ONLY valid JSON: {"angle":N,"reasoning":"brief explanation"}`;
     }
   }
 );
+
+export { analyzeKneeAngleGeminiTest } from "./geminiTest";
