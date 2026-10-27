@@ -26,12 +26,14 @@ struct ACLRehabTrackerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if ACL_MODEL_TEST
-            ModelComparisonView()
-            #else
-            ContentView()
-            #endif
-                .preferredColorScheme(.dark)
+            Group {
+                #if ACL_MODEL_TEST
+                ModelComparisonView()
+                #else
+                ContentView()
+                #endif
+            }
+            .preferredColorScheme(.dark)
         }
     }
 }

@@ -76,3 +76,15 @@ making a production model decision. No claim of improved accuracy has been estab
 
 Remove the tester UID from the allowlist and redeploy only the test function to disable access.
 The App Store app and its production function require no rollback because testing does not modify them.
+
+## Verified setup status
+
+- TypeScript build and all seven request/response/access tests passed.
+- The Debug iOS app compiled successfully for a physical-device architecture without signing.
+- Release build settings retain `com.twintipsolutions.ACLRehabTracker` and exclude `GoogleService-Test.plist`.
+- The new test function is deployed. Live calls returned `UNAUTHENTICATED` (401) without a token
+  and `PERMISSION_DENIED` (403) for a fresh non-allowlisted anonymous account, which was then deleted.
+- A minimal non-photo Vertex AI request confirmed project access to Gemini 3.8 Flash.
+- The tester allowlist is disabled pending installation and collection of the phone app's UID.
+- Signing/installing on the paired iPhone requires refreshing the Apple Developer login in Xcode.
+- End-to-end photo comparison on the phone and measurement accuracy remain unverified.
