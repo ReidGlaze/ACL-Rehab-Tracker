@@ -73,11 +73,16 @@ class GeminiPoseService {
     }
 
     /// Detect knee angle from an image file path
-    func detectKneeAngle(imagePath: String, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil) async throws -> PoseResult {
+    func detectKneeAngle(imagePath: String, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle") async throws -> PoseResult {
         guard let image = UIImage(contentsOfFile: imagePath) else {
             throw GeminiPoseError.imageLoadFailed
         }
-        return try await detectKneeAngle(image: image, injuredKnee: injuredKnee, injuryType: injuryType)
+        return try await detectKneeAngle(
+            image: image,
+            injuredKnee: injuredKnee,
+            injuryType: injuryType,
+            functionName: functionName
+        )
     }
 
     // MARK: - Private Helpers

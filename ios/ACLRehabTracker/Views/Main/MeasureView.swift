@@ -30,6 +30,9 @@ struct MeasureView: View {
     @AppStorage("aiAnalysisConsented") private var aiAnalysisConsented = false
     @State private var showConsentSheet = false
     @State private var pendingAction: PendingAction?
+    #if ACL_MODEL_TEST
+    @AppStorage("testAnalysisBackend") private var testAnalysisBackend = "opus"
+    #endif
 
     enum PendingAction {
         case capture
@@ -115,6 +118,12 @@ struct MeasureView: View {
             typeToggle
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.bottom, AppSpacing.md)
+
+            #if ACL_MODEL_TEST
+            modelTestControls
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.sm)
+            #endif
 
             // Camera Preview
             cameraPreview
@@ -204,6 +213,27 @@ struct MeasureView: View {
         }
         .padding(.horizontal, AppSpacing.xl)
     }
+
+    #if ACL_MODEL_TEST
+    private var modelTestControls: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            Picker("Test model", selection: $testAnalysisBackend) {
+                Text("Opus 4.6 (production)").tag("opus")
+                Text("Gemini 3.8 Flash (test)").tag("gemini")
+            }
+            .pickerStyle(.segmented)
+
+            Text(testAnalysisBackend == "gemini"
+                 ? "Gemini test mode: results are isolated from your live app."
+                 : "Opus mode: uses the current production measurement function.")
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+        }
+        .padding(AppSpacing.sm)
+        .background(AppColors.surface)
+        .cornerRadius(AppRadius.md)
+    }
+    #endif
 
     private var typeToggle: some View {
         HStack(spacing: AppSpacing.xs) {
@@ -429,7 +459,8 @@ struct MeasureView: View {
                 let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
                     imagePath: imagePath,
                     injuredKnee: userProfile?.injuredKnee,
-                    injuryType: userProfile?.injuryType
+                    injuryType: userProfile?.injuryType,
+                    functionName: analysisFunctionName
                 )
                 await MainActor.run {
                     poseResult = detectedPose
@@ -473,7 +504,8 @@ struct MeasureView: View {
                 let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
                     imagePath: fileURL.path,
                     injuredKnee: userProfile?.injuredKnee,
-                    injuryType: userProfile?.injuryType
+                    injuryType: userProfile?.injuryType,
+                    functionName: analysisFunctionName
                 )
 
                 await MainActor.run {
@@ -495,6 +527,16 @@ struct MeasureView: View {
         cameraService.capturedImage = nil
         cameraService.capturedImagePath = nil
         screenState = .camera
+    }
+
+    private var analysisFunctionName: String {
+        #if ACL_MODEL_TEST
+        return testAnalysisBackend == "gemini"
+            ? "analyzeKneeAngleGeminiTest"
+            : "analyzeKneeAngle"
+        #else
+        return "analyzeKneeAngle"
+        #endif
     }
 
     private func checkAndRequestReview() {
