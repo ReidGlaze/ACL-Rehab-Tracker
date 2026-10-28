@@ -27,6 +27,17 @@ struct MeasureView: View {
     @State private var showSuccessBanner = false
     @AppStorage("measurementSaveCount") private var saveCount = 0
     @AppStorage("lastReviewPromptDate") private var lastReviewPromptDateInterval: Double = 0
+    @AppStorage("aiAnalysisConsented") private var aiAnalysisConsented = false
+    @State private var showConsentSheet = false
+    @State private var pendingAction: PendingAction?
+    #if ACL_MODEL_TEST
+    @AppStorage("testAnalysisBackend") private var testAnalysisBackend = "opus"
+    #endif
+
+    enum PendingAction {
+        case capture
+        case photoPicker
+    }
 
     var body: some View {
         Group {
@@ -69,6 +80,24 @@ struct MeasureView: View {
                 handleSelectedPhoto(image)
             }
         }
+        .sheet(isPresented: $showConsentSheet) {
+            AIConsentView(
+                onAgree: {
+                    aiAnalysisConsented = true
+                    let action = pendingAction
+                    pendingAction = nil
+                    showConsentSheet = false
+                    if action == .photoPicker {
+                        showPhotoPicker = true
+                    }
+                },
+                onCancel: {
+                    pendingAction = nil
+                    showConsentSheet = false
+                }
+            )
+            .presentationDetents([.large])
+        }
     }
 
     // MARK: - Camera View
@@ -89,6 +118,12 @@ struct MeasureView: View {
             typeToggle
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.bottom, AppSpacing.md)
+
+            #if ACL_MODEL_TEST
+            modelTestControls
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.sm)
+            #endif
 
             // Camera Preview
             cameraPreview
@@ -115,7 +150,14 @@ struct MeasureView: View {
     private var cameraControls: some View {
         HStack {
             // Photo Library picker (left)
-            Button(action: { showPhotoPicker = true }) {
+            Button(action: {
+                if aiAnalysisConsented {
+                    showPhotoPicker = true
+                } else {
+                    pendingAction = .photoPicker
+                    showConsentSheet = true
+                }
+            }) {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 24, weight: .medium))
                     .foregroundColor(AppColors.text)
@@ -128,7 +170,14 @@ struct MeasureView: View {
             Spacer()
 
             // Capture button (center)
-            Button(action: handleCapture) {
+            Button(action: {
+                if aiAnalysisConsented {
+                    handleCapture()
+                } else {
+                    pendingAction = .capture
+                    showConsentSheet = true
+                }
+            }) {
                 ZStack {
                     Circle()
                         .stroke(AppColors.text, lineWidth: 4)
@@ -164,6 +213,27 @@ struct MeasureView: View {
         }
         .padding(.horizontal, AppSpacing.xl)
     }
+
+    #if ACL_MODEL_TEST
+    private var modelTestControls: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            Picker("Test model", selection: $testAnalysisBackend) {
+                Text("Opus 4.6 (production)").tag("opus")
+                Text("Gemini 3.8 Flash (test)").tag("gemini")
+            }
+            .pickerStyle(.segmented)
+
+            Text(testAnalysisBackend == "gemini"
+                 ? "Gemini test mode: results are isolated from your live app."
+                 : "Opus mode: uses the current production measurement function.")
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+        }
+        .padding(AppSpacing.sm)
+        .background(AppColors.surface)
+        .cornerRadius(AppRadius.md)
+    }
+    #endif
 
     private var typeToggle: some View {
         HStack(spacing: AppSpacing.xs) {
@@ -389,7 +459,8 @@ struct MeasureView: View {
                 let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
                     imagePath: imagePath,
                     injuredKnee: userProfile?.injuredKnee,
-                    injuryType: userProfile?.injuryType
+                    injuryType: userProfile?.injuryType,
+                    functionName: analysisFunctionName
                 )
                 await MainActor.run {
                     poseResult = detectedPose
@@ -433,7 +504,8 @@ struct MeasureView: View {
                 let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
                     imagePath: fileURL.path,
                     injuredKnee: userProfile?.injuredKnee,
-                    injuryType: userProfile?.injuryType
+                    injuryType: userProfile?.injuryType,
+                    functionName: analysisFunctionName
                 )
 
                 await MainActor.run {
@@ -455,6 +527,16 @@ struct MeasureView: View {
         cameraService.capturedImage = nil
         cameraService.capturedImagePath = nil
         screenState = .camera
+    }
+
+    private var analysisFunctionName: String {
+        #if ACL_MODEL_TEST
+        return testAnalysisBackend == "gemini"
+            ? "analyzeKneeAngleGeminiTest"
+            : "analyzeKneeAngle"
+        #else
+        return "analyzeKneeAngle"
+        #endif
     }
 
     private func checkAndRequestReview() {

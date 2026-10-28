@@ -150,10 +150,22 @@ struct ContentView: View {
 
     // MARK: - Authentication
     private func ensureAuthenticated() async {
-        guard !authService.isAuthenticated else { return }
+        if authService.isAuthenticated {
+            #if ACL_MODEL_TEST
+            if let uid = authService.currentUserId {
+                print("ACL_MODEL_TEST_UID=\(uid)")
+            }
+            #endif
+            return
+        }
 
         do {
             _ = try await authService.signInAnonymously()
+            #if ACL_MODEL_TEST
+            if let uid = authService.currentUserId {
+                print("ACL_MODEL_TEST_UID=\(uid)")
+            }
+            #endif
         } catch {
             print("Auth error: \(error)")
             errorMessage = "Unable to connect. Please check your internet connection and try again."
