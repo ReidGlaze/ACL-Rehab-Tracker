@@ -38,13 +38,13 @@ struct AIConsentView: View {
                         bulletPoint(
                             icon: "cloud",
                             title: "Who processes it",
-                            detail: "Photos are processed by Google's Vertex AI (Gemini model) via a secure Google Cloud Function."
+                            detail: "Photos are sent through a secure Google Cloud Function to an AI model hosted on Google Cloud Vertex AI (such as Anthropic's Claude or Google's Gemini). The specific model may change as we improve accuracy."
                         )
 
                         bulletPoint(
                             icon: "clock.arrow.circlepath",
                             title: "How it's handled",
-                            detail: "The photo is analyzed in real time and is not stored or retained by the AI service after processing."
+                            detail: "The photo is analyzed in real time and is not stored or retained by the AI model after processing."
                         )
                     }
 

@@ -22,7 +22,7 @@
     <div class="container">
         <div class="legal">
             <h1>Privacy Policy</h1>
-            <p class="last-updated">Last updated: February 10, 2026</p>
+            <p class="last-updated">Last updated: November 3, 2026</p>
 
             <p>Twin Tip Solutions ("we", "our", or "us") operates the ACL Rehab mobile application (the "App"). This Privacy Policy explains how we collect, use, and protect your information when you use our App.</p>
 
@@ -41,6 +41,7 @@
                 <li><strong>Surgery Date</strong> &mdash; The date of your ACL surgery, used to calculate your recovery timeline.</li>
                 <li><strong>Knee Measurements</strong> &mdash; Flexion and extension angle measurements that you record, along with the date and type of each measurement.</li>
                 <li><strong>Photos</strong> &mdash; Photos of your knee taken through the App for AI-powered angle analysis. These images are uploaded to Firebase Storage and processed by our cloud-based AI service.</li>
+                <li><strong>Usage Data</strong> &mdash; Anonymous information about how the App is used, such as app opens, screens viewed, and whether measurements succeed. See Section 7.</li>
             </ul>
 
             <h2>3. How We Use Your Information</h2>
@@ -49,6 +50,7 @@
                 <li>Storing and displaying your measurement history.</li>
                 <li>Generating progress charts and recovery timelines.</li>
                 <li>Processing knee photos through our AI service to estimate knee angle.</li>
+                <li>Understanding how the App is used so we can fix problems and improve it.</li>
             </ul>
 
             <h2>4. Data Storage</h2>
@@ -57,28 +59,29 @@
                 <li><strong>Cloud Firestore</strong> &mdash; For storing your profile information and measurement records.</li>
                 <li><strong>Firebase Storage</strong> &mdash; For storing knee photos you take within the App.</li>
             </ul>
-            <p>Data is stored securely and is associated with your anonymous user identifier. We do not sell, rent, or share your data with any third parties.</p>
+            <p>Data is stored securely and is associated with your anonymous user identifier. We do not sell or rent your data, and we do not share it with third parties except for the processing described in Sections 6 and 7.</p>
 
             <h2>5. Camera Usage</h2>
             <p>The App requests access to your device's camera to take photos of your knee for angle measurement. Camera access is used exclusively for this purpose.</p>
 
             <h2>6. AI Knee Angle Analysis</h2>
-            <p>When you submit a knee photo for angle measurement, the following data is sent to <strong>Google's Vertex AI (Gemini model)</strong> service via a secure Google Cloud Function:</p>
+            <p>When you submit a knee photo for angle measurement, the following data is sent through a secure Google Cloud Function to an AI model hosted on <strong>Google Cloud Vertex AI</strong> (such as Anthropic's Claude or Google's Gemini):</p>
             <ul>
                 <li><strong>Your knee photo</strong> (image data)</li>
                 <li><strong>Your injured knee side</strong> (left or right)</li>
                 <li><strong>Your injury type</strong> (e.g., ACL reconstruction)</li>
             </ul>
-            <p>This data is used solely to estimate your knee angle. The photo is analyzed in real time and is <strong>not stored or retained</strong> by Google's Vertex AI (Gemini model) service after processing. Google processes this data under their <a href="https://cloud.google.com/terms/data-processing-addendum" target="_blank" rel="noopener">Cloud data processing terms</a>.</p>
-            <p>Before your first AI analysis, the App will ask for your explicit consent to share this data with Google's Vertex AI (Gemini model) service.</p>
+            <p>This data is used solely to estimate your knee angle. The specific AI model may change as we improve accuracy, but processing always takes place on Google Cloud Vertex AI. The photo is analyzed in real time and is <strong>not stored or retained</strong> by the AI model after processing. Google processes this data under their <a href="https://cloud.google.com/terms/data-processing-addendum" target="_blank" rel="noopener">Cloud data processing terms</a>.</p>
+            <p>Before your first AI analysis, the App will ask for your explicit consent to share this data with Google Cloud Vertex AI.</p>
 
             <h2>7. Third-Party Services</h2>
             <p>The App uses the following third-party services:</p>
             <ul>
                 <li><strong>Google Firebase</strong> &mdash; For anonymous authentication, data storage, and cloud functions. Firebase's privacy policy can be found at <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">firebase.google.com/support/privacy</a>.</li>
-                <li><strong>Google Vertex AI (Gemini model)</strong> &mdash; For processing knee photos and estimating angles. Google acts as a data processor and does not retain your photos after analysis. See Section 6 for full details.</li>
+                <li><strong>Google Cloud Vertex AI</strong> &mdash; For processing knee photos and estimating angles using a hosted AI model (such as Anthropic's Claude or Google's Gemini). Google acts as a data processor and the AI model does not retain your photos after analysis. See Section 6 for full details.</li>
+                <li><strong>Google Analytics for Firebase</strong> &mdash; For understanding how the App is used (for example, app opens, screens viewed, and whether measurements succeed). This usage data is tied to a random app identifier, not to your name, and never includes your photos, knee angles, or injury details. Google's privacy policy can be found at <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">policies.google.com/privacy</a>.</li>
             </ul>
-            <p>Apart from these services, we do not sell, share, or distribute your data to any other third parties. We do not integrate any advertising networks, analytics SDKs, or other third-party tracking services.</p>
+            <p>Apart from these services, we do not sell, share, or distribute your data to any other third parties. We do not integrate any advertising networks, and we do not use your data for advertising or cross-app tracking.</p>
 
             <h2>8. Data Retention and Deletion</h2>
             <p>Your data is retained as long as you use the App. If you wish to delete your data:</p>

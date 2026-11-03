@@ -88,4 +88,6 @@ struct PoseResult: Codable {
     var knee: Keypoint
     var ankle: Keypoint
     var angle: Int
+    /// Only the model-test endpoints populate this; production leaves it nil.
+    var reasoning: String? = nil
 }

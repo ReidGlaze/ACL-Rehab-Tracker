@@ -15,7 +15,7 @@ class GeminiPoseService {
     ///   - injuredKnee: Which knee is injured (left/right) - helps AI identify correct leg
     ///   - injuryType: Type of injury for context
     /// - Returns: PoseResult with the detected angle
-    func detectKneeAngle(image: UIImage, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle") async throws -> PoseResult {
+    func detectKneeAngle(image: UIImage, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle", model: String? = nil) async throws -> PoseResult {
         // Resize image if too large
         let resizedImage = resizeImageIfNeeded(image, maxDimension: 1024)
 
@@ -34,6 +34,11 @@ class GeminiPoseService {
         }
         if let injury = injuryType {
             requestData["injuryType"] = injury.rawValue
+        }
+
+        // Only the model-test endpoints read this; production ignores it.
+        if let model {
+            requestData["model"] = model
         }
 
         // Call the Cloud Function
@@ -73,7 +78,7 @@ class GeminiPoseService {
     }
 
     /// Detect knee angle from an image file path
-    func detectKneeAngle(imagePath: String, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle") async throws -> PoseResult {
+    func detectKneeAngle(imagePath: String, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle", model: String? = nil) async throws -> PoseResult {
         guard let image = UIImage(contentsOfFile: imagePath) else {
             throw GeminiPoseError.imageLoadFailed
         }
@@ -81,7 +86,8 @@ class GeminiPoseService {
             image: image,
             injuredKnee: injuredKnee,
             injuryType: injuryType,
-            functionName: functionName
+            functionName: functionName,
+            model: model
         )
     }
 
@@ -123,7 +129,8 @@ class GeminiPoseService {
             hip: Keypoint(x: hipX, y: hipY, confidence: Float(confidence)),
             knee: Keypoint(x: kneeX, y: kneeY, confidence: Float(confidence)),
             ankle: Keypoint(x: ankleX, y: ankleY, confidence: Float(confidence)),
-            angle: clampedAngle
+            angle: clampedAngle,
+            reasoning: data["reasoning"] as? String
         )
     }
 }

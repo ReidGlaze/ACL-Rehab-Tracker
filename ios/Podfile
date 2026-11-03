@@ -10,9 +10,6 @@ target 'ACLRehabTracker' do
   pod 'FirebaseStorage'
   pod 'FirebaseFunctions'
   pod 'FirebaseAnalytics'
-
-  # MediaPipe for pose detection
-  pod 'MediaPipeTasksVision'
 end
 
 post_install do |installer|

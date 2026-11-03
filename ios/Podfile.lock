@@ -1421,9 +1421,6 @@ PODS:
   - gRPC-Core/Privacy (1.69.0)
   - GTMSessionFetcher/Core (5.0.0)
   - leveldb-library (1.22.6)
-  - MediaPipeTasksCommon (0.10.21)
-  - MediaPipeTasksVision (0.10.21):
-    - MediaPipeTasksCommon (= 0.10.21)
   - nanopb (3.30910.0):
     - nanopb/decode (= 3.30910.0)
     - nanopb/encode (= 3.30910.0)
@@ -1439,7 +1436,6 @@ DEPENDENCIES:
   - FirebaseFirestore
   - FirebaseFunctions
   - FirebaseStorage
-  - MediaPipeTasksVision
 
 SPEC REPOS:
   trunk:
@@ -1466,8 +1462,6 @@ SPEC REPOS:
     - gRPC-Core
     - GTMSessionFetcher
     - leveldb-library
-    - MediaPipeTasksCommon
-    - MediaPipeTasksVision
     - nanopb
     - PromisesObjC
     - RecaptchaInterop
@@ -1496,12 +1490,10 @@ SPEC CHECKSUMS:
   gRPC-Core: 860978b7db482de8b4f5e10677216309b5ff6330
   GTMSessionFetcher: 02d6e866e90bc236f48a703a041dfe43e6221a29
   leveldb-library: cc8b8f8e013647a295ad3f8cd2ddf49a6f19be19
-  MediaPipeTasksCommon: 6cfa29170d4900f04d250ad95ec058f14a741f38
-  MediaPipeTasksVision: 7b1c0f5a5820e87e9d96926f5e65d8cd3744fac2
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
 
-PODFILE CHECKSUM: 3f846a49fd564a2ed41669ed0b2ca1f00d4da5da
+PODFILE CHECKSUM: ba969e31c594598292f72901c63cefbfa7d1e1b3
 
 COCOAPODS: 1.16.2

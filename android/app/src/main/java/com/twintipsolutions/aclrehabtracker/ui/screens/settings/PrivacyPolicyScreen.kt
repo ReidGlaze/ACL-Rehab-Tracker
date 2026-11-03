@@ -47,7 +47,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit = {}) {
                 .padding(24.dp)
         ) {
             Text(
-                text = "Last updated: February 5, 2026",
+                text = "Last updated: November 3, 2026",
                 fontSize = 12.sp,
                 color = AppColors.TextSecondary
             )
@@ -75,14 +75,29 @@ fun PrivacyPolicyScreen(onBack: () -> Unit = {}) {
 
             PolicySection(
                 title = "AI Knee Angle Analysis",
-                body = "When you submit a photo for angle measurement, it is sent to a Google Cloud " +
-                    "Function that uses the Gemini AI model to estimate your knee angle. The photo " +
-                    "is processed in real time and is not retained by the AI service after analysis."
+                body = "When you submit a photo for angle measurement, your knee photo, injured knee " +
+                    "side, and injury type are sent through a secure Google Cloud Function to an AI " +
+                    "model hosted on Google Cloud Vertex AI (such as Anthropic's Claude or Google's " +
+                    "Gemini) to estimate your knee angle. The specific AI model may change as we " +
+                    "improve accuracy, but processing always takes place on Google Cloud Vertex AI. " +
+                    "The photo is analyzed in real time and is not stored or retained by the AI model " +
+                    "after processing. Google processes this data under their Cloud data processing terms."
+            )
+
+            PolicySection(
+                title = "Analytics",
+                body = "We use Google Analytics for Firebase to understand how the app is used, such as " +
+                    "app opens, screens viewed, and whether measurements succeed. This usage data is " +
+                    "tied to a random app identifier, not to your name, and never includes your " +
+                    "photos, knee angles, or injury details."
             )
 
             PolicySection(
                 title = "Third-Party Sharing",
-                body = "We do not sell, share, or distribute your data to any third parties. Your " +
+                body = "Your knee photos and injury details are processed on Google Cloud Vertex AI for " +
+                    "angle analysis, and anonymous usage data is processed by Google Analytics for " +
+                    "Firebase. Google acts as a data processor for both. Apart from this processing, " +
+                    "we do not sell, share, or distribute your data to any other third parties. Your " +
                     "rehabilitation data is used solely to provide you with the app's features."
             )
 

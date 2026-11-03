@@ -146,6 +146,9 @@ struct ContentView: View {
         .onAppear {
             configureTabBarAppearance()
         }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            AnalyticsService.screenViewed(tab.rawValue)
+        }
     }
 
     // MARK: - Authentication
@@ -175,6 +178,8 @@ struct ContentView: View {
     // MARK: - Onboarding Completion
     private func completeOnboarding() async {
         guard let uid = authService.currentUserId else { return }
+
+        AnalyticsService.onboardingCompleted()
 
         let profile = UserProfile(
             name: userName,
