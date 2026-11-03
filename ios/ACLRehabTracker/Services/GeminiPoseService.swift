@@ -15,7 +15,7 @@ class GeminiPoseService {
     ///   - injuredKnee: Which knee is injured (left/right) - helps AI identify correct leg
     ///   - injuryType: Type of injury for context
     /// - Returns: PoseResult with the detected angle
-    func detectKneeAngle(image: UIImage, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil) async throws -> PoseResult {
+    func detectKneeAngle(image: UIImage, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle", model: String? = nil) async throws -> PoseResult {
         // Resize image if too large
         let resizedImage = resizeImageIfNeeded(image, maxDimension: 1024)
 
@@ -36,9 +36,17 @@ class GeminiPoseService {
             requestData["injuryType"] = injury.rawValue
         }
 
+        // Only the model-test endpoints read this; production ignores it.
+        if let model {
+            requestData["model"] = model
+        }
+
         // Call the Cloud Function
         do {
-            let callable = functions.httpsCallable("analyzeKneeAngle")
+            let callable = functions.httpsCallable(functionName)
+            #if ACL_MODEL_TEST
+            callable.timeoutInterval = 120
+            #endif
             let result = try await callable.call(requestData)
 
             guard let data = result.data as? [String: Any] else {
@@ -55,6 +63,8 @@ class GeminiPoseService {
                 switch code {
                 case .unauthenticated:
                     throw GeminiPoseError.detectionFailed("Authentication error. Please restart the app and try again.")
+                case .permissionDenied:
+                    throw GeminiPoseError.detectionFailed("This test account is not enabled yet. Share the tester UID with your developer.")
                 case .unavailable:
                     throw GeminiPoseError.detectionFailed("AI service is temporarily unavailable. Please try again later.")
                 case .deadlineExceeded:
@@ -68,11 +78,17 @@ class GeminiPoseService {
     }
 
     /// Detect knee angle from an image file path
-    func detectKneeAngle(imagePath: String, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil) async throws -> PoseResult {
+    func detectKneeAngle(imagePath: String, injuredKnee: KneeSide? = nil, injuryType: InjuryType? = nil, functionName: String = "analyzeKneeAngle", model: String? = nil) async throws -> PoseResult {
         guard let image = UIImage(contentsOfFile: imagePath) else {
             throw GeminiPoseError.imageLoadFailed
         }
-        return try await detectKneeAngle(image: image, injuredKnee: injuredKnee, injuryType: injuryType)
+        return try await detectKneeAngle(
+            image: image,
+            injuredKnee: injuredKnee,
+            injuryType: injuryType,
+            functionName: functionName,
+            model: model
+        )
     }
 
     // MARK: - Private Helpers
@@ -113,7 +129,8 @@ class GeminiPoseService {
             hip: Keypoint(x: hipX, y: hipY, confidence: Float(confidence)),
             knee: Keypoint(x: kneeX, y: kneeY, confidence: Float(confidence)),
             ankle: Keypoint(x: ankleX, y: ankleY, confidence: Float(confidence)),
-            angle: clampedAngle
+            angle: clampedAngle,
+            reasoning: data["reasoning"] as? String
         )
     }
 }

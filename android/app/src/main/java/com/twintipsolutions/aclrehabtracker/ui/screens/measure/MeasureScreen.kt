@@ -34,6 +34,7 @@ import com.twintipsolutions.aclrehabtracker.data.model.Measurement
 import com.twintipsolutions.aclrehabtracker.data.model.MeasurementType
 import com.twintipsolutions.aclrehabtracker.data.model.PoseResult
 import com.twintipsolutions.aclrehabtracker.data.model.UserProfile
+import com.twintipsolutions.aclrehabtracker.data.service.AnalyticsService
 import com.twintipsolutions.aclrehabtracker.data.service.AuthService
 import com.twintipsolutions.aclrehabtracker.data.service.CameraService
 import com.twintipsolutions.aclrehabtracker.data.service.FirestoreService
@@ -98,7 +99,10 @@ fun MeasureScreen() {
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let {
+            val type = selectedType
+            AnalyticsService.measurementStarted(type, AnalyticsService.Source.LIBRARY)
             scope.launch {
+                var stage = AnalyticsService.FailureStage.CAPTURE
                 try {
                     errorMessage = null
                     // Copy picked image to temp file
@@ -111,14 +115,17 @@ fun MeasureScreen() {
                     }
                     capturedImagePath = tempFile.absolutePath
                     screenState = MeasureScreenState.PROCESSING
+                    stage = AnalyticsService.FailureStage.ANALYSIS
                     val result = GeminiPoseService.detectKneeAngle(
                         imagePath = tempFile.absolutePath,
                         injuredKnee = userProfile?.injuredKnee?.name?.lowercase(),
                         injuryType = userProfile?.injuryType?.firestoreValue
                     )
+                    AnalyticsService.measurementAnalyzed(type, AnalyticsService.Source.LIBRARY)
                     poseResult = result
                     screenState = MeasureScreenState.RESULT
                 } catch (e: Exception) {
+                    AnalyticsService.measurementFailed(type, AnalyticsService.Source.LIBRARY, stage)
                     errorMessage = e.message ?: "Failed to analyze image"
                     screenState = MeasureScreenState.CAMERA
                 }
@@ -150,7 +157,10 @@ fun MeasureScreen() {
 
     fun handleCapture() {
         hapticClick()
+        val type = selectedType
+        AnalyticsService.measurementStarted(type, AnalyticsService.Source.CAMERA)
         scope.launch {
+            var stage = AnalyticsService.FailureStage.CAPTURE
             try {
                 errorMessage = null
                 // Grab frozen frame from preview before switching to processing
@@ -159,14 +169,17 @@ fun MeasureScreen() {
                 screenState = MeasureScreenState.PROCESSING
                 val path = cameraService.capturePhoto()
                 capturedImagePath = path
+                stage = AnalyticsService.FailureStage.ANALYSIS
                 val result = GeminiPoseService.detectKneeAngle(
                     imagePath = path,
                     injuredKnee = userProfile?.injuredKnee?.name?.lowercase(),
                     injuryType = userProfile?.injuryType?.firestoreValue
                 )
+                AnalyticsService.measurementAnalyzed(type, AnalyticsService.Source.CAMERA)
                 poseResult = result
                 screenState = MeasureScreenState.RESULT
             } catch (e: Exception) {
+                AnalyticsService.measurementFailed(type, AnalyticsService.Source.CAMERA, stage)
                 hapticError()
                 errorMessage = e.message ?: "Failed to analyze image"
                 screenState = MeasureScreenState.CAMERA
@@ -212,6 +225,7 @@ fun MeasureScreen() {
                 val prefs = context.getSharedPreferences("acl_rehab_prefs", android.content.Context.MODE_PRIVATE)
                 val newCount = prefs.getInt("measurement_save_count", 0) + 1
                 prefs.edit().putInt("measurement_save_count", newCount).apply()
+                AnalyticsService.measurementSaved(measurement.type, newCount)
 
                 val shouldPrompt = newCount == 2 || (newCount > 2 && newCount % 20 == 0)
                 if (shouldPrompt) {
@@ -229,6 +243,7 @@ fun MeasureScreen() {
                     }
                 }
             } catch (e: Exception) {
+                AnalyticsService.measurementFailed(selectedType, null, AnalyticsService.FailureStage.SAVE)
                 hapticError()
                 errorMessage = e.message ?: "Failed to save"
                 screenState = MeasureScreenState.RESULT
@@ -281,7 +296,10 @@ fun MeasureScreen() {
                         measurementType = selectedType,
                         isSaving = screenState == MeasureScreenState.SAVING,
                         onSave = { handleSave() },
-                        onRetake = { handleRetake() }
+                        onRetake = {
+                            AnalyticsService.measurementRetaken(selectedType)
+                            handleRetake()
+                        }
                     )
                 }
             }
@@ -413,21 +431,7 @@ private fun CameraView(
                             .fillMaxSize()
                             .background(AppColors.Background.copy(alpha = if (displayBitmap != null) 0.6f else 0.85f))
                     )
-                    // Spinner + text
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(40.dp),
-                            color = AppColors.Primary,
-                            strokeWidth = 3.dp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Analyzing...",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = AppColors.Text
-                        )
-                    }
+                    AnalyzingStatus()
                 }
             } else if (!isProcessing) {
                 Column(
@@ -559,6 +563,51 @@ private fun CameraView(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+/** Analysis steps as (message, starts at ms). Keep in sync with iOS `AnalyzingStatusView`. */
+private val analyzingSteps = listOf(
+    "Analyzing your photo..." to 0L,
+    "Measuring your knee angle..." to 4_000L,
+    "Almost done..." to 11_000L
+)
+
+/**
+ * Spinner shown while the photo is analyzed. Analysis takes ~15s, so the message advances
+ * through steps to show progress instead of sitting on a static "Analyzing...".
+ */
+@Composable
+private fun AnalyzingStatus() {
+    var stepIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        for (index in 1 until analyzingSteps.size) {
+            kotlinx.coroutines.delay(analyzingSteps[index].second - analyzingSteps[index - 1].second)
+            stepIndex = index
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(40.dp),
+            color = AppColors.Primary,
+            strokeWidth = 3.dp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = analyzingSteps[stepIndex].first,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = AppColors.Text
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "This usually takes about 15 seconds",
+            fontSize = 13.sp,
+            color = AppColors.TextSecondary,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

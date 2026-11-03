@@ -1,15 +1,17 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import AnthropicVertex from "@anthropic-ai/vertex-sdk";
 import * as admin from "firebase-admin";
+import { measurementPrompt } from "./geminiTestCore";
 
 admin.initializeApp();
 
-// Initialize Google GenAI with Vertex AI
-// Gemini 3 models require the global endpoint
-const ai = new GoogleGenAI({
-  vertexai: true,
-  project: process.env.GCLOUD_PROJECT || "acl-rehab-d3e88",
-  location: "global",
+// Initialize Anthropic client via Vertex AI
+// "global" rather than us-east5: this is the only region Sonnet 5.5 has been verified working in
+// from this project (via the test endpoint), and global is also cheaper ($2.00/$10.00 per MTok
+// vs $2.20/$11.00 regional).
+const anthropic = new AnthropicVertex({
+  projectId: process.env.GCLOUD_PROJECT || "acl-rehab-d3e88",
+  region: "global",
 });
 
 interface AnalyzeKneeAngleRequest {
@@ -33,13 +35,13 @@ interface AnalyzeKneeAngleResponse {
 }
 
 /**
- * Analyze a leg image and return the knee angle using Vertex AI
+ * Analyze a leg image and return the knee angle using Claude Sonnet 5.5 via Vertex AI
  */
 export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
   {
     region: "us-central1",
     memory: "512MiB",
-    timeoutSeconds: 120, // Extended for HIGH thinking mode
+    timeoutSeconds: 120,
   },
   async (request): Promise<AnalyzeKneeAngleResponse> => {
     // Require authentication
@@ -53,111 +55,88 @@ export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
       throw new HttpsError("invalid-argument", "imageBase64 is required");
     }
 
-    // Build context about the patient's injury
-    let injuryContext = "";
-    if (injuredKnee || injuryType) {
-      injuryContext = "\n\nPATIENT CONTEXT:";
-      if (injuredKnee) {
-        injuryContext += `\n- The patient's ${injuredKnee.toUpperCase()} knee is the injured one. If both legs are visible, focus on the ${injuredKnee} leg.`;
-      }
-      if (injuryType) {
-        const injuryDescriptions: Record<string, string> = {
-          "acl_only": "ACL reconstruction",
-          "acl_meniscus": "ACL reconstruction with meniscus repair",
-          "acl_mcl": "ACL and MCL repair",
-          "acl_meniscus_mcl": "ACL, meniscus, and MCL repair",
-          "other": "knee surgery"
-        };
-        const description = injuryDescriptions[injuryType] || injuryType;
-        injuryContext += `\n- The patient had ${description}. This is for rehabilitation tracking.`;
-      }
-    }
+    // Shared with the model-test endpoints so production and the comparison harness can never
+    // drift apart. Includes the patient context and the revised hip-out-of-frame wording.
+    const measurementInstructions = measurementPrompt({ imageBase64, injuredKnee, injuryType });
 
-    // Different prompts for single vs dual image
-    const singleImagePrompt = `Measure the knee flexion angle in this photo of a leg.
+    const singleImagePrompt = measurementInstructions;
 
-Look at the angle formed at the KNEE JOINT between:
-- The THIGH (femur) - from hip to knee
-- The SHIN (tibia) - from knee to ankle
-
-MEDICAL CONVENTION:
-- 0° = leg is completely STRAIGHT (thigh and shin form a straight line)
-- 45° = moderate bend
-- 90° = right angle (L-shape)
-- 135° = deeply bent (heel near buttock)
-
-IMPORTANT: Focus on the actual bend at the knee joint. If the leg looks straight, it IS close to 0°.${injuryContext}
-
-Return ONLY valid JSON: {"angle":N,"confidence":C}`;
-
-    const dualImagePrompt = `Measure the knee flexion angle using these TWO photos of the same leg.
-
-Look at the angle formed at the KNEE JOINT between:
-- The THIGH (femur) - from hip to knee
-- The SHIN (tibia) - from knee to ankle
-
-Use both images to get a better understanding of the true angle.
-
-MEDICAL CONVENTION:
-- 0° = leg is completely STRAIGHT (thigh and shin form a straight line)
-- 45° = moderate bend
-- 90° = right angle (L-shape)
-- 135° = deeply bent (heel near buttock)${injuryContext}
-
-Return ONLY valid JSON: {"angle":N,"confidence":C}`;
+    const dualImagePrompt = `Use both photos of the same leg for better accuracy.\n\n${measurementInstructions}`;
 
     const prompt = imageBase64_2 ? dualImagePrompt : singleImagePrompt;
 
-    // Build image parts
-    const imageParts: Array<{ inlineData: { data: string; mimeType: string } } | { text: string }> = [
+    // Build message content with images
+    const content: Array<{ type: "image"; source: { type: "base64"; media_type: "image/jpeg"; data: string } } | { type: "text"; text: string }> = [
       {
-        inlineData: {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/jpeg",
           data: imageBase64,
-          mimeType: "image/jpeg",
         },
       },
     ];
 
     if (imageBase64_2) {
-      imageParts.push({
-        inlineData: {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/jpeg",
           data: imageBase64_2,
-          mimeType: "image/jpeg",
         },
       });
     }
 
-    imageParts.push({ text: prompt });
+    content.push({ type: "text", text: prompt });
 
     try {
       const startTime = Date.now();
-      console.log("Starting Gemini analysis with HIGH thinking...");
+      console.log("Starting Claude Sonnet 5.5 analysis...");
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-          {
-            role: "user",
-            parts: imageParts,
-          },
-        ],
-        config: {
-          temperature: 0.1, // Low temperature for consistent output
-          maxOutputTokens: 4096,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.HIGH, // High thinking for better 3D geometry reasoning
-          },
-        },
-      });
+      // Sonnet 5.5 rejects `budget_tokens` with a 400 -- every 4.6+ model uses adaptive thinking
+      // with `effort` instead. Cast because the pinned SDK's types predate both fields.
+      const response = await anthropic.messages.create(
+        {
+          model: "claude-sonnet-5-5",
+          // Do NOT raise this without switching to streaming. The SDK throws
+          // "Streaming is required for operations that may take longer than 10 minutes" from
+          // calculateNonstreamingTimeout based on max_tokens alone -- an explicit timeout does
+          // not suppress it. 32000 here took production down 100%; 16000 is verified working.
+          max_tokens: 16000,
+          thinking: { type: "adaptive" },
+          output_config: { effort: "high" },
+          messages: [
+            {
+              role: "user",
+              content: content,
+            },
+          ],
+        } as unknown as Parameters<typeof anthropic.messages.create>[0],
+        // 60s keeps us inside the SHIPPED
+        // app's callable deadline, which is Firebase's 70s default -- GeminiPoseService only
+        // raises it to 120s under ACL_MODEL_TEST, so released users get 70s. Failing here first
+        // returns a real error message instead of a client-side timeout.
+        { timeout: 60_000 }
+      );
 
       const elapsedMs = Date.now() - startTime;
-      console.log(`Gemini response received in ${elapsedMs}ms (${(elapsedMs/1000).toFixed(1)}s)`);
+      console.log(`Claude response received in ${elapsedMs}ms (${(elapsedMs / 1000).toFixed(1)}s)`);
 
-      let text = response.text;
+      // Real token counts so cost can be measured rather than estimated. Output includes
+      // thinking tokens, which dominate spend on this workload.
+      const usage = (response as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+      console.log("Token usage", { input: usage?.input_tokens, output: usage?.output_tokens });
+
+      // Extract text from response (skip thinking blocks). Cast because the params cast above
+      // widens the return type to include the streaming variant, which this call never is.
+      const blocks = (response as { content: Array<{ type: string; text?: string }> }).content;
+      const textBlock = blocks.find((block: { type: string }) => block.type === "text");
+      let text = textBlock && "text" in textBlock ? textBlock.text : null;
       console.log("AI Response:", text);
 
       if (!text) {
-        throw new HttpsError("internal", "No response from Vertex AI");
+        throw new HttpsError("internal", "No response from Claude");
       }
 
       // Strip markdown code blocks if present
@@ -171,7 +150,6 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
         throw new HttpsError("internal", "Invalid response format from AI: " + text.substring(0, 200));
       }
 
-      // Try to parse, if truncated we'll catch the error
       let parsed;
       try {
         parsed = JSON.parse(jsonMatch[0]);
@@ -184,9 +162,14 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
         throw new HttpsError("failed-precondition", parsed.error);
       }
 
-      // Validate response structure - only angle is required now
+      // Validate response structure - only angle is required
       if (typeof parsed.angle !== "number") {
         throw new HttpsError("internal", "Invalid response structure from AI");
+      }
+
+      // Log reasoning for debugging
+      if (parsed.reasoning) {
+        console.log("AI reasoning:", parsed.reasoning);
       }
 
       return {
@@ -198,7 +181,8 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
         ankle: { x: 0, y: 0 },
       };
     } catch (error) {
-      console.error("Vertex AI error:", error);
+      console.error("Claude AI error:", error);
+      console.error("Claude error detail:", JSON.stringify(error, Object.getOwnPropertyNames(error ?? {})));
 
       if (error instanceof HttpsError) {
         throw error;
@@ -206,7 +190,7 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
 
       // Check for rate limit error
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("exhausted")) {
+      if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("rate")) {
         throw new HttpsError(
           "resource-exhausted",
           "Too many requests. Please wait a moment and try again."
@@ -220,3 +204,6 @@ Return ONLY valid JSON: {"angle":N,"confidence":C}`;
     }
   }
 );
+
+export { analyzeKneeAngleGeminiTest } from "./geminiTest";
+export { analyzeKneeAngleClaudeTest } from "./claudeTest";

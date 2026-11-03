@@ -27,6 +27,45 @@ struct MeasureView: View {
     @State private var showSuccessBanner = false
     @AppStorage("measurementSaveCount") private var saveCount = 0
     @AppStorage("lastReviewPromptDate") private var lastReviewPromptDateInterval: Double = 0
+    @AppStorage("aiAnalysisConsented") private var aiAnalysisConsented = false
+    @State private var showConsentSheet = false
+    @State private var pendingAction: PendingAction?
+    #if ACL_MODEL_TEST
+    @State private var comparisonResults: [ModelTestResult] = []
+
+    /// One backend's answer for a single photo, so test builds can compare models on identical input.
+    struct ModelTestResult: Identifiable {
+        let id = UUID()
+        let label: String
+        let pose: PoseResult?
+        let elapsed: TimeInterval
+        let failure: String?
+    }
+
+    struct TestBackend {
+        let label: String
+        let functionName: String
+        /// nil for endpoints that pin their own model (production, and the Gemini test endpoint).
+        let model: String?
+    }
+
+    /// The first entry is the baseline: it drives the main angle display and is what Save stores.
+    /// Backends run sequentially, so keep this list short -- each entry adds ~10-15s per photo.
+    /// Swap a `model` string for "claude-sonnet-5-5" / "claude-haiku-5-5" once Model Garden
+    /// access is granted. Rows 1 and 2 are the same model on the same prompt and differ only in
+    /// thinking config (production's fixed budget_tokens vs adaptive at effort high), so a gap
+    /// between them is the thinking change rather than the model.
+    private static let testBackends: [TestBackend] = [
+        TestBackend(label: "Opus 4.6 \u{2014} prod", functionName: "analyzeKneeAngle", model: nil),
+        TestBackend(label: "Opus 5.5 \u{2014} high", functionName: "analyzeKneeAngleClaudeTest", model: "claude-opus-5-5"),
+        TestBackend(label: "Sonnet 5.5 \u{2014} high", functionName: "analyzeKneeAngleClaudeTest", model: "claude-sonnet-5-5")
+    ]
+    #endif
+
+    enum PendingAction {
+        case capture
+        case photoPicker
+    }
 
     var body: some View {
         Group {
@@ -69,6 +108,26 @@ struct MeasureView: View {
                 handleSelectedPhoto(image)
             }
         }
+        .sheet(isPresented: $showConsentSheet) {
+            AIConsentView(
+                onAgree: {
+                    AnalyticsService.aiConsent(accepted: true)
+                    aiAnalysisConsented = true
+                    let action = pendingAction
+                    pendingAction = nil
+                    showConsentSheet = false
+                    if action == .photoPicker {
+                        showPhotoPicker = true
+                    }
+                },
+                onCancel: {
+                    AnalyticsService.aiConsent(accepted: false)
+                    pendingAction = nil
+                    showConsentSheet = false
+                }
+            )
+            .presentationDetents([.large])
+        }
     }
 
     // MARK: - Camera View
@@ -89,6 +148,12 @@ struct MeasureView: View {
             typeToggle
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.bottom, AppSpacing.md)
+
+            #if ACL_MODEL_TEST
+            modelTestControls
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.sm)
+            #endif
 
             // Camera Preview
             cameraPreview
@@ -115,7 +180,14 @@ struct MeasureView: View {
     private var cameraControls: some View {
         HStack {
             // Photo Library picker (left)
-            Button(action: { showPhotoPicker = true }) {
+            Button(action: {
+                if aiAnalysisConsented {
+                    showPhotoPicker = true
+                } else {
+                    pendingAction = .photoPicker
+                    showConsentSheet = true
+                }
+            }) {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 24, weight: .medium))
                     .foregroundColor(AppColors.text)
@@ -128,7 +200,14 @@ struct MeasureView: View {
             Spacer()
 
             // Capture button (center)
-            Button(action: handleCapture) {
+            Button(action: {
+                if aiAnalysisConsented {
+                    handleCapture()
+                } else {
+                    pendingAction = .capture
+                    showConsentSheet = true
+                }
+            }) {
                 ZStack {
                     Circle()
                         .stroke(AppColors.text, lineWidth: 4)
@@ -164,6 +243,25 @@ struct MeasureView: View {
         }
         .padding(.horizontal, AppSpacing.xl)
     }
+
+    #if ACL_MODEL_TEST
+    private var modelTestControls: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            Text("MODEL TEST BUILD")
+                .font(AppTypography.footnote)
+                .foregroundColor(AppColors.textSecondary)
+                .tracking(1)
+
+            Text("Every photo is measured by all \(Self.testBackends.count) models so the angles are directly comparable. The first result is the one saved.")
+                .font(AppTypography.caption1)
+                .foregroundColor(AppColors.textSecondary)
+        }
+        .padding(AppSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.surface)
+        .cornerRadius(AppRadius.md)
+    }
+    #endif
 
     private var typeToggle: some View {
         HStack(spacing: AppSpacing.xs) {
@@ -204,14 +302,7 @@ struct MeasureView: View {
                     Color.black.opacity(0.6)
 
                     // Spinner + text
-                    VStack(spacing: AppSpacing.md) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(1.5)
-                        Text("Analyzing...")
-                            .font(AppTypography.headline)
-                            .foregroundColor(.white)
-                    }
+                    AnalyzingStatusView()
                 }
             } else if isCameraLoading {
                 VStack(spacing: AppSpacing.md) {
@@ -269,6 +360,11 @@ struct MeasureView: View {
             angleDisplay
                 .padding(.horizontal, AppSpacing.lg)
 
+            #if ACL_MODEL_TEST
+            comparisonTable
+                .padding(.horizontal, AppSpacing.lg)
+            #endif
+
             // Action Buttons
             actionButtons
                 .padding(.horizontal, AppSpacing.lg)
@@ -325,9 +421,76 @@ struct MeasureView: View {
         .cornerRadius(AppRadius.lg)
     }
 
+    #if ACL_MODEL_TEST
+    private var comparisonTable: some View {
+        // Scrolls within a fixed height so model reasoning can be long without pushing the
+        // Retake/Save buttons off screen.
+        ScrollView {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            ForEach(comparisonResults) { result in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(result.label)
+                        .font(AppTypography.caption1)
+                        .foregroundColor(AppColors.textSecondary)
+
+                    Spacer()
+
+                    if let pose = result.pose {
+                        Text(comparisonAngleText(for: result, pose: pose))
+                            .font(AppTypography.headline)
+                            .foregroundColor(AppColors.text)
+                    } else {
+                        Text("failed")
+                            .font(AppTypography.caption1)
+                            .foregroundColor(AppColors.textTertiary)
+                    }
+
+                    Text(String(format: "%.1fs", result.elapsed))
+                        .font(AppTypography.caption1)
+                        .foregroundColor(AppColors.textTertiary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+
+                if let failure = result.failure {
+                    Text(failure)
+                        .font(AppTypography.caption1)
+                        .foregroundColor(AppColors.textTertiary)
+                }
+
+                // Why the model gave that angle. Sent to this device only, never logged server-side.
+                if let reasoning = result.pose?.reasoning {
+                    Text(reasoning)
+                        .font(AppTypography.caption1)
+                        .foregroundColor(AppColors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 260)
+        .padding(AppSpacing.md)
+        .background(AppColors.surface)
+        .cornerRadius(AppRadius.lg)
+    }
+
+    /// Shows the angle, plus its signed difference from the baseline for every other backend.
+    private func comparisonAngleText(for result: ModelTestResult, pose: PoseResult) -> String {
+        guard let baseline = comparisonResults.first?.pose,
+              result.id != comparisonResults.first?.id else {
+            return "\(pose.angle)\u{00B0}"
+        }
+        let delta = pose.angle - baseline.angle
+        return "\(pose.angle)\u{00B0}  (\(delta >= 0 ? "+" : "")\(delta))"
+    }
+    #endif
+
     private var actionButtons: some View {
         HStack(spacing: AppSpacing.md) {
-            Button(action: handleRetake) {
+            Button(action: {
+                AnalyticsService.measurementRetaken(type: measurementType)
+                handleRetake()
+            }) {
                 Text("Retake")
             }
             .buttonStyle(SecondaryButtonStyle(isEnabled: screenState != .saving))
@@ -380,22 +543,25 @@ struct MeasureView: View {
         // Show processing state immediately so user knows photo was taken
         screenState = .processing
 
+        let type = measurementType
+        AnalyticsService.measurementStarted(type: type, source: .camera)
+
         Task {
+            var stage: AnalyticsService.FailureStage = .capture
             do {
                 // Capture the actual photo (capturedImage set by delegate)
                 let imagePath = try await cameraService.capturePhoto()
 
                 // Send image directly to Gemini for angle analysis with injury info
-                let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
-                    imagePath: imagePath,
-                    injuredKnee: userProfile?.injuredKnee,
-                    injuryType: userProfile?.injuryType
-                )
+                stage = .analysis
+                let detectedPose = try await analyze(imagePath: imagePath)
+                AnalyticsService.measurementAnalyzed(type: type, source: .camera)
                 await MainActor.run {
                     poseResult = detectedPose
                     screenState = .result
                 }
             } catch {
+                AnalyticsService.measurementFailed(type: type, source: .camera, stage: stage)
                 await MainActor.run {
                     let notification = UINotificationFeedbackGenerator()
                     notification.notificationOccurred(.error)
@@ -411,7 +577,11 @@ struct MeasureView: View {
         // Show processing spinner immediately
         screenState = .processing
 
+        let type = measurementType
+        AnalyticsService.measurementStarted(type: type, source: .library)
+
         Task {
+            var stage: AnalyticsService.FailureStage = .capture
             do {
                 // Save image to temp file
                 let tempDir = FileManager.default.temporaryDirectory
@@ -430,17 +600,16 @@ struct MeasureView: View {
                 }
 
                 // Analyze image with Gemini
-                let detectedPose = try await GeminiPoseService.shared.detectKneeAngle(
-                    imagePath: fileURL.path,
-                    injuredKnee: userProfile?.injuredKnee,
-                    injuryType: userProfile?.injuryType
-                )
+                stage = .analysis
+                let detectedPose = try await analyze(imagePath: fileURL.path)
+                AnalyticsService.measurementAnalyzed(type: type, source: .library)
 
                 await MainActor.run {
                     poseResult = detectedPose
                     screenState = .result
                 }
             } catch {
+                AnalyticsService.measurementFailed(type: type, source: .library, stage: stage)
                 await MainActor.run {
                     errorMessage = error.localizedDescription
                     showError = true
@@ -455,7 +624,68 @@ struct MeasureView: View {
         cameraService.capturedImage = nil
         cameraService.capturedImagePath = nil
         screenState = .camera
+        #if ACL_MODEL_TEST
+        comparisonResults = []
+        #endif
     }
+
+    /// Release builds measure with the production function. Test builds measure the same photo
+    /// with every backend and return the baseline, so saving behaves identically either way.
+    private func analyze(imagePath: String) async throws -> PoseResult {
+        #if ACL_MODEL_TEST
+        let results = await runModelComparison(imagePath: imagePath)
+        await MainActor.run { comparisonResults = results }
+
+        guard let pose = results.first(where: { $0.pose != nil })?.pose else {
+            throw GeminiPoseError.detectionFailed(
+                results.first?.failure ?? "No model returned a measurement."
+            )
+        }
+        return pose
+        #else
+        return try await GeminiPoseService.shared.detectKneeAngle(
+            imagePath: imagePath,
+            injuredKnee: userProfile?.injuredKnee,
+            injuryType: userProfile?.injuryType
+        )
+        #endif
+    }
+
+    #if ACL_MODEL_TEST
+    /// Measures one photo with each backend in turn. Sequential so the reported timings aren't
+    /// distorted by contention, and per-backend failures never hide the other results.
+    private func runModelComparison(imagePath: String) async -> [ModelTestResult] {
+        var results: [ModelTestResult] = []
+
+        for backend in Self.testBackends {
+            let startedAt = Date()
+            do {
+                let pose = try await GeminiPoseService.shared.detectKneeAngle(
+                    imagePath: imagePath,
+                    injuredKnee: userProfile?.injuredKnee,
+                    injuryType: userProfile?.injuryType,
+                    functionName: backend.functionName,
+                    model: backend.model
+                )
+                results.append(ModelTestResult(
+                    label: backend.label,
+                    pose: pose,
+                    elapsed: Date().timeIntervalSince(startedAt),
+                    failure: nil
+                ))
+            } catch {
+                results.append(ModelTestResult(
+                    label: backend.label,
+                    pose: nil,
+                    elapsed: Date().timeIntervalSince(startedAt),
+                    failure: error.localizedDescription
+                ))
+            }
+        }
+
+        return results
+    }
+    #endif
 
     private func checkAndRequestReview() {
         let dominated = saveCount == 2 || (saveCount > 2 && saveCount % 20 == 0)
@@ -519,6 +749,7 @@ struct MeasureView: View {
                     handleRetake() // Reset to camera view
                     showSuccessBanner = true
                     saveCount += 1
+                    AnalyticsService.measurementSaved(type: measurement.type, saveCount: saveCount)
                     checkAndRequestReview()
                     // Auto-hide after 2 seconds
                     Task {
@@ -527,6 +758,7 @@ struct MeasureView: View {
                     }
                 }
             } catch {
+                AnalyticsService.measurementFailed(type: measurementType, source: nil, stage: .save)
                 await MainActor.run {
                     let notification = UINotificationFeedbackGenerator()
                     notification.notificationOccurred(.error)
@@ -572,6 +804,47 @@ struct ImagePickerView: UIViewControllerRepresentable {
                 DispatchQueue.main.async {
                     self.parent.onImagePicked(uiImage)
                 }
+            }
+        }
+    }
+}
+
+/// Spinner shown while the photo is analyzed. Analysis takes ~15s, so the message advances
+/// through steps to show progress instead of sitting on a static "Analyzing...".
+/// Keep the steps and timings in sync with Android's `AnalyzingStatus` in MeasureScreen.kt.
+private struct AnalyzingStatusView: View {
+    private static let steps: [(message: String, startsAt: Duration)] = [
+        ("Analyzing your photo...", .zero),
+        ("Measuring your knee angle...", .seconds(4)),
+        ("Almost done...", .seconds(11)),
+    ]
+
+    @State private var stepIndex = 0
+
+    var body: some View {
+        VStack(spacing: AppSpacing.md) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                .scaleEffect(1.5)
+            Text(Self.steps[stepIndex].message)
+                .font(AppTypography.headline)
+                .foregroundColor(.white)
+                .contentTransition(.opacity)
+                .animation(.easeInOut, value: stepIndex)
+            Text("This usually takes about 15 seconds")
+                .font(AppTypography.footnote)
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .accessibilityElement(children: .combine)
+        .task {
+            for index in Self.steps.indices.dropFirst() {
+                let wait = Self.steps[index].startsAt - Self.steps[index - 1].startsAt
+                do {
+                    try await Task.sleep(for: wait)
+                } catch {
+                    return // View disappeared; stop advancing.
+                }
+                stepIndex = index
             }
         }
     }

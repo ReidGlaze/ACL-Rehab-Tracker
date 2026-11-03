@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -24,6 +25,7 @@ import androidx.navigation.compose.rememberNavController
 import com.twintipsolutions.aclrehabtracker.data.model.InjuryType
 import com.twintipsolutions.aclrehabtracker.data.model.KneeSide
 import com.twintipsolutions.aclrehabtracker.data.model.UserProfile
+import com.twintipsolutions.aclrehabtracker.data.service.AnalyticsService
 import com.twintipsolutions.aclrehabtracker.data.service.AuthService
 import com.twintipsolutions.aclrehabtracker.data.service.FirestoreService
 import com.twintipsolutions.aclrehabtracker.ui.screens.history.HistoryScreen
@@ -149,6 +151,7 @@ private fun OnboardingFlow(onComplete: () -> Unit) {
                 onDateChange = { surgeryDate = it },
                 isLoading = isSaving,
                 onComplete = {
+                    AnalyticsService.onboardingCompleted()
                     scope.launch {
                         isSaving = true
                         // Always cache profile locally so Home can show it even offline
@@ -191,6 +194,17 @@ private fun OnboardingFlow(onComplete: () -> Unit) {
 @Composable
 private fun MainTabView(onAccountDeleted: () -> Unit = {}) {
     val navController = rememberNavController()
+
+    // Log a screen_view whenever the destination changes (names match iOS tab names).
+    DisposableEffect(navController) {
+        val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+            val route = destination.route ?: return@OnDestinationChangedListener
+            val name = bottomNavItems.firstOrNull { it.route == route }?.title ?: route
+            AnalyticsService.screenViewed(name)
+        }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
+    }
 
     Scaffold(
         bottomBar = {

@@ -146,14 +146,29 @@ struct ContentView: View {
         .onAppear {
             configureTabBarAppearance()
         }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            AnalyticsService.screenViewed(tab.rawValue)
+        }
     }
 
     // MARK: - Authentication
     private func ensureAuthenticated() async {
-        guard !authService.isAuthenticated else { return }
+        if authService.isAuthenticated {
+            #if ACL_MODEL_TEST
+            if let uid = authService.currentUserId {
+                print("ACL_MODEL_TEST_UID=\(uid)")
+            }
+            #endif
+            return
+        }
 
         do {
             _ = try await authService.signInAnonymously()
+            #if ACL_MODEL_TEST
+            if let uid = authService.currentUserId {
+                print("ACL_MODEL_TEST_UID=\(uid)")
+            }
+            #endif
         } catch {
             print("Auth error: \(error)")
             errorMessage = "Unable to connect. Please check your internet connection and try again."
@@ -163,6 +178,8 @@ struct ContentView: View {
     // MARK: - Onboarding Completion
     private func completeOnboarding() async {
         guard let uid = authService.currentUserId else { return }
+
+        AnalyticsService.onboardingCompleted()
 
         let profile = UserProfile(
             name: userName,
