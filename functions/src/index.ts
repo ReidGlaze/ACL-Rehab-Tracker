@@ -1,13 +1,17 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import AnthropicVertex from "@anthropic-ai/vertex-sdk";
 import * as admin from "firebase-admin";
+import { measurementPrompt } from "./geminiTestCore";
 
 admin.initializeApp();
 
 // Initialize Anthropic client via Vertex AI
+// "global" rather than us-east5: this is the only region Sonnet 5.5 has been verified working in
+// from this project (via the test endpoint), and global is also cheaper ($2.00/$10.00 per MTok
+// vs $2.20/$11.00 regional).
 const anthropic = new AnthropicVertex({
   projectId: process.env.GCLOUD_PROJECT || "acl-rehab-d3e88",
-  region: "us-east5",
+  region: "global",
 });
 
 interface AnalyzeKneeAngleRequest {
@@ -31,7 +35,7 @@ interface AnalyzeKneeAngleResponse {
 }
 
 /**
- * Analyze a leg image and return the knee angle using Claude Opus 4.6 via Vertex AI
+ * Analyze a leg image and return the knee angle using Claude Sonnet 5.5 via Vertex AI
  */
 export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
   {
@@ -51,47 +55,9 @@ export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
       throw new HttpsError("invalid-argument", "imageBase64 is required");
     }
 
-    // Build context about the patient's injury
-    let injuryContext = "";
-    if (injuredKnee || injuryType) {
-      injuryContext = "\n\nPATIENT CONTEXT:";
-      if (injuredKnee) {
-        injuryContext += `\n- The patient's ${injuredKnee.toUpperCase()} knee is the injured one. If both legs are visible, focus on the ${injuredKnee} leg.`;
-      }
-      if (injuryType) {
-        const injuryDescriptions: Record<string, string> = {
-          "acl_only": "ACL reconstruction",
-          "acl_meniscus": "ACL reconstruction with meniscus repair",
-          "acl_mcl": "ACL and MCL repair",
-          "acl_meniscus_mcl": "ACL, meniscus, and MCL repair",
-          "other": "knee surgery"
-        };
-        const description = injuryDescriptions[injuryType] || injuryType;
-        injuryContext += `\n- The patient had ${description}. This is for rehabilitation tracking.`;
-      }
-    }
-
-    // Different prompts for single vs dual image
-    const measurementInstructions = `You are measuring knee FLEXION angle for ACL rehabilitation.
-
-HOW TO MEASURE:
-1. Find the HIP joint (or top of thigh if hip is hidden)
-2. Find the KNEE joint center
-3. Find the ANKLE joint
-4. The geometric angle at the knee (between thigh line and shin line) is ~180° when straight, ~90° when bent to an L-shape
-5. FLEXION ANGLE = 180 minus that geometric angle
-
-FLEXION SCALE:
-- 0° = fully straight (thigh and shin in a straight line)
-- 45° = slightly bent
-- 90° = L-shape, thigh and shin perpendicular
-- 120°+ = deep bend, heel near buttock
-
-IMPORTANT: Do NOT measure the shin's angle relative to the floor or any other reference. Measure the bend AT the knee joint between the thigh and shin segments.
-
-Account for camera perspective and foreshortening. Be precise to the nearest degree.${injuryContext}
-
-Return ONLY valid JSON: {"angle":N,"reasoning":"brief explanation"}`;
+    // Shared with the model-test endpoints so production and the comparison harness can never
+    // drift apart. Includes the patient context and the revised hip-out-of-frame wording.
+    const measurementInstructions = measurementPrompt({ imageBase64, injuredKnee, injuryType });
 
     const singleImagePrompt = measurementInstructions;
 
@@ -126,28 +92,46 @@ Return ONLY valid JSON: {"angle":N,"reasoning":"brief explanation"}`;
 
     try {
       const startTime = Date.now();
-      console.log("Starting Claude Opus 4.6 analysis...");
+      console.log("Starting Claude Sonnet 5.5 analysis...");
 
-      const response = await anthropic.messages.create({
-        model: "claude-opus-4-6",
-        max_tokens: 16000,
-        thinking: {
-          type: "enabled",
-          budget_tokens: 10000,
-        },
-        messages: [
-          {
-            role: "user",
-            content: content,
-          },
-        ],
-      });
+      // Sonnet 5.5 rejects `budget_tokens` with a 400 -- every 4.6+ model uses adaptive thinking
+      // with `effort` instead. Cast because the pinned SDK's types predate both fields.
+      const response = await anthropic.messages.create(
+        {
+          model: "claude-sonnet-5-5",
+          // Do NOT raise this without switching to streaming. The SDK throws
+          // "Streaming is required for operations that may take longer than 10 minutes" from
+          // calculateNonstreamingTimeout based on max_tokens alone -- an explicit timeout does
+          // not suppress it. 32000 here took production down 100%; 16000 is verified working.
+          max_tokens: 16000,
+          thinking: { type: "adaptive" },
+          output_config: { effort: "high" },
+          messages: [
+            {
+              role: "user",
+              content: content,
+            },
+          ],
+        } as unknown as Parameters<typeof anthropic.messages.create>[0],
+        // 60s keeps us inside the SHIPPED
+        // app's callable deadline, which is Firebase's 70s default -- GeminiPoseService only
+        // raises it to 120s under ACL_MODEL_TEST, so released users get 70s. Failing here first
+        // returns a real error message instead of a client-side timeout.
+        { timeout: 60_000 }
+      );
 
       const elapsedMs = Date.now() - startTime;
       console.log(`Claude response received in ${elapsedMs}ms (${(elapsedMs / 1000).toFixed(1)}s)`);
 
-      // Extract text from response (skip thinking blocks)
-      const textBlock = response.content.find((block: { type: string }) => block.type === "text");
+      // Real token counts so cost can be measured rather than estimated. Output includes
+      // thinking tokens, which dominate spend on this workload.
+      const usage = (response as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+      console.log("Token usage", { input: usage?.input_tokens, output: usage?.output_tokens });
+
+      // Extract text from response (skip thinking blocks). Cast because the params cast above
+      // widens the return type to include the streaming variant, which this call never is.
+      const blocks = (response as { content: Array<{ type: string; text?: string }> }).content;
+      const textBlock = blocks.find((block: { type: string }) => block.type === "text");
       let text = textBlock && "text" in textBlock ? textBlock.text : null;
       console.log("AI Response:", text);
 
@@ -222,3 +206,4 @@ Return ONLY valid JSON: {"angle":N,"reasoning":"brief explanation"}`;
 );
 
 export { analyzeKneeAngleGeminiTest } from "./geminiTest";
+export { analyzeKneeAngleClaudeTest } from "./claudeTest";

@@ -28,7 +28,7 @@ export function validateTestRequest(data: unknown): TestImageRequest {
   return { imageBase64: image, injuredKnee: value.injuredKnee as TestImageRequest["injuredKnee"], injuryType: value.injuryType as string | undefined };
 }
 
-export function parseTestResponse(text: string | undefined) {
+export function parseTestResponse(text: string | undefined, modelName: string = GEMINI_TEST_MODEL) {
   if (!text) throw new Error("No measurement returned. Try a clearer side-view photo.");
   const value = JSON.parse(text);
   if (value.error) throw new Error("The leg could not be measured. Try a clearer side-view photo.");
@@ -40,7 +40,9 @@ export function parseTestResponse(text: string | undefined) {
     // Compatibility field only; this is not a calibrated probability of accuracy.
     confidence: 0,
     hip: { x: 0, y: 0 }, knee: { x: 0, y: 0 }, ankle: { x: 0, y: 0 },
-    model: GEMINI_TEST_MODEL,
+    model: modelName,
+    // Returned to the test device so a wrong angle can be diagnosed. Still never logged here.
+    reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
   };
 }
 
@@ -58,22 +60,37 @@ export function measurementPrompt(data: TestImageRequest): string {
   // Keep the measurement instructions aligned with the production Opus prompt.
   return `You are measuring knee FLEXION angle for ACL rehabilitation.
 
-HOW TO MEASURE:
-1. Find the HIP joint (or top of thigh if hip is hidden)
-2. Find the KNEE joint center
-3. Find the ANKLE joint
-4. The geometric angle at the knee (between thigh line and shin line) is ~180° when straight, ~90° when bent to an L-shape
-5. FLEXION ANGLE = 180 minus that geometric angle
+WHAT TO MEASURE
+The angle where the thigh meets the shin, at the knee.
+- THIGH segment: the long axis of the upper leg. The hip is usually outside the frame in these
+  photos. That is normal and expected. Read the thigh's direction from whatever portion of it is
+  visible and extend that line to the knee. Do not search for the hip, do not guess a hip
+  position off-frame, and do not decline to measure because the hip is not visible.
+- SHIN segment: the long axis of the lower leg, running from the knee toward the ankle.
+- The geometric angle is the angle between those two lines where they meet at the knee.
 
-FLEXION SCALE:
-- 0° = fully straight (thigh and shin in a straight line)
-- 45° = slightly bent
-- 90° = L-shape, thigh and shin perpendicular
-- 120°+ = deep bend, heel near buttock
+CONVERTING TO FLEXION
+FLEXION = 180 minus the geometric angle.
+- Thigh and shin forming one straight line (geometric 180°) = 0° flexion, leg fully straight
+- Geometric 135° = 45° flexion
+- Geometric 90°, an L-shape = 90° flexion
+- Geometric 45° = 135° flexion, heel near buttock
 
-IMPORTANT: Do NOT measure the shin's angle relative to the floor or any other reference. Measure the bend AT the knee joint between the thigh and shin segments.
+REPORTING FULL EXTENSION
+0 is a normal, expected answer, not an edge case. Full extension is the goal of this measurement
+and many people reach it. If the thigh and shin form a straight line, report 0. Do not round away
+from 0 to a small positive number out of caution. Report a few degrees of flexion only when you
+can actually see a bend at the knee.
 
-Account for camera perspective and foreshortening. Be precise to the nearest degree.${context}
+TWO MISTAKES THAT PRODUCE LARGE ERRORS
+1. Measuring a segment against an external reference. The floor, a wall, a bed, the horizon, and
+   the edges of the image are all irrelevant. A shin angled steeply away from the floor can still
+   belong to an almost straight leg. Only the angle between thigh and shin counts.
+2. Treating camera perspective as bend. Foreshortening makes a segment pointed toward or away
+   from the camera look shorter than it is, which reads as more bend than is really present.
+   Judge the joint itself.
+
+Be precise to the nearest degree.${context}
 
 If no leg can be measured, return {"error":"unmeasurable"}. Otherwise return ONLY valid JSON: {"angle":N,"reasoning":"brief explanation"}`;
 }

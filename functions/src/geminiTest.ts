@@ -3,7 +3,8 @@ import { defineString } from "firebase-functions/params";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { GEMINI_TEST_MODEL, measurementPrompt, parseTestResponse, validateTestRequest } from "./geminiTestCore";
 
-const testerUIDs = defineString("GEMINI_TESTER_UIDS", { default: "" });
+// Shared by every private model-test endpoint so there is one allowlist to maintain.
+export const testerUIDs = defineString("GEMINI_TESTER_UIDS", { default: "" });
 
 // Private test endpoint. Never route production clients here before validation.
 export const analyzeKneeAngleGeminiTest = onCall(
