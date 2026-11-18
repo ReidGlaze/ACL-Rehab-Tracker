@@ -4,7 +4,7 @@ struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
-    private let privacyPolicyURL = URL(string: "https://aclrehabtracker.vercel.app/privacy")!
+    private let privacyPolicyURL = URL(string: "https://aclrehab.twintipsolutions.com/privacy")!
 
     @State private var name = ""
     @State private var injuredKnee: KneeSide = .right

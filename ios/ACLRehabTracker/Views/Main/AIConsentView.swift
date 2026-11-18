@@ -6,7 +6,7 @@ struct AIConsentView: View {
 
     @Environment(\.openURL) private var openURL
 
-    private let privacyPolicyURL = URL(string: "https://aclrehabtracker.vercel.app/privacy")!
+    private let privacyPolicyURL = URL(string: "https://aclrehab.twintipsolutions.com/privacy")!
 
     var body: some View {
         NavigationStack {
