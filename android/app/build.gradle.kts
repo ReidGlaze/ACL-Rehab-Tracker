@@ -15,14 +15,14 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.twintipsolutions.aclrehabtracker"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.twintipsolutions.aclrehabtracker"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.1"
+        targetSdk = 36
+        versionCode = 6
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
