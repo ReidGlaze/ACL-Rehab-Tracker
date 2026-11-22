@@ -24,16 +24,24 @@ final class AccurateModeUITests: XCTestCase {
         try FileManager.default.createDirectory(atPath: shotsDir, withIntermediateDirectories: true)
     }
 
+    /// hip, knee, ankle (x,y each, 0...1 from the top left) from `accuracy/knee_pose_run.sh` on seated.jpg.
+    private static let seatedKeypoints = "0.4031,0.4318,0.5603,0.4702,0.5479,0.6936"
+
     // MARK: - Helpers
 
     private func launch(mode: String?, photo: String? = nil, extra: [String] = []) throws {
         var args = ["-onboardingComplete", "YES", "-aiAnalysisConsented", "YES"]
-        if let mode { args += ["-measureMode", mode] }
+        // A launch argument pins the mode for the whole run (it overrides what the chooser saves),
+        // so tests that switch modes pass nil, which starts from "nothing saved" like a new install.
+        if let mode { args += ["-measureMode", mode] } else { args += ["-resetMeasureMode", "YES"] }
         if let photo {
             guard let photoDir else { throw XCTSkip("Set TEST_RUNNER_PHOTO_DIR to run photo tests.") }
             let path = "\(photoDir)/\(photo)"
             guard FileManager.default.fileExists(atPath: path) else { throw XCTSkip("Missing test photo \(path)") }
             args += ["-testPhoto", path]
+            // Apple's body pose request does not run in the simulator, so for the seated photo the
+            // app is given the points the same estimator finds for it on a Mac (it reads 84 there).
+            if photo == "seated.jpg" { args += ["-testKeypoints", Self.seatedKeypoints] }
         }
         app.launchArguments = args + extra
         app.launch()
@@ -61,7 +69,7 @@ final class AccurateModeUITests: XCTestCase {
 
     @MainActor
     func testChooserExplainsAccurateModeAndSwitchesBothWays() throws {
-        try launch(mode: "standard")
+        try launch(mode: nil)
 
         let row = app.buttons["measureMode.row"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
@@ -151,7 +159,7 @@ final class AccurateModeUITests: XCTestCase {
     // MARK: - Network (production AI function, saves under the simulator's own anonymous user)
 
     @MainActor
-    func testStandardFlowStillMeasuresAndSavesTheOriginalWay() throws {
+    func testNetwork1_StandardFlowStillMeasuresAndSavesTheOriginalWay() throws {
         guard networkTestsEnabled else { throw XCTSkip("Set TEST_RUNNER_ACL_NETWORK=1 to call the AI function.") }
         try launch(mode: nil, photo: "closeup.jpg")
 
@@ -165,7 +173,7 @@ final class AccurateModeUITests: XCTestCase {
     }
 
     @MainActor
-    func testAccurateSaveAppearsInHistoryNextToOlderMeasurements() throws {
+    func testNetwork2_AccurateSaveAppearsInHistoryNextToOlderMeasurements() throws {
         guard networkTestsEnabled else { throw XCTSkip("Set TEST_RUNNER_ACL_NETWORK=1 to save a measurement.") }
         try launch(mode: "accurate", photo: "seated.jpg")
 
@@ -174,8 +182,13 @@ final class AccurateModeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Measurement saved!"].waitForExistence(timeout: 30))
 
         app.tabBars.buttons["History"].tap()
-        let tagged = app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Accurate mode'")).firstMatch
+        let tagged = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Accurate mode'")).firstMatch
         XCTAssertTrue(tagged.waitForExistence(timeout: 20), "The Accurate-mode measurement is labelled in History")
+        // Standard-photo saves have no `method` field, exactly like every measurement saved before
+        // Accurate mode existed. They must still be listed, without the label.
+        let untagged = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'history.rowTime' AND NOT (label CONTAINS 'Accurate mode')")).firstMatch
+        XCTAssertTrue(untagged.exists, "Measurements without a method field still show in History")
         shot("11-history")
     }
 }

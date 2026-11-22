@@ -409,6 +409,7 @@ struct MeasurementRow: View {
                          : DateHelpers.formatTime(measurement.timestamp))
                         .font(AppTypography.caption1)
                         .foregroundColor(AppColors.textSecondary)
+                        .accessibilityIdentifier("history.rowTime")
                 }
 
                 Spacer()

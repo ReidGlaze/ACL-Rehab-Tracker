@@ -53,18 +53,28 @@ only the AI photo check can catch that case.
 
 - `accuracy/render_chooser.sh <outDir>` renders the method chooser and the Measure-tab method row
   to PNG from the app's own SwiftUI views, on the Mac. Useful when no simulator is available.
-- `ios/ACLRehabTrackerUITests/AccurateModeUITests.swift` drives the chooser, an on-device
-  measurement, the close-up retake screen and a failed photo check in the simulator. It needs
-  `TEST_RUNNER_PHOTO_DIR` with `seated.jpg` and `closeup.jpg`. Debug builds also accept
-  `-startTab Measure`, `-measureMode accurate`, `-showMeasureModeSheet YES`, `-testPhoto <path>`
-  and `-forceCheckMessage <text>` as launch arguments.
+- `ios/ACLRehabTrackerUITests/AccurateModeUITests.swift` drives the app in the simulator: the
+  chooser, an Accurate result with a dragged dot, the close-up retake screen, a failed photo check,
+  the Standard photo flow from a fresh install, and saving both kinds and seeing them in History.
+  It needs `TEST_RUNNER_PHOTO_DIR` with `seated.jpg` and `closeup.jpg`; the last two tests call the
+  test Firebase project and only run with `TEST_RUNNER_ACL_NETWORK=1`. Grant the camera first or its
+  alert covers the screen: `xcrun simctl privacy booted grant camera com.twintipsolutions.ACLRehabTracker.test`.
+  All six passed on 2026-11-22 (iPhone 17 simulator, iOS 26.2).
+- Debug launch arguments: `-startTab Measure`, `-measureMode accurate` (pins the mode for that run),
+  `-resetMeasureMode YES`, `-showMeasureModeSheet YES`, `-testPhoto <path>`,
+  `-forceCheckMessage <text>` and, simulator only, `-testKeypoints hx,hy,kx,ky,ax,ay`.
+
+## Vision does not run in the simulator
+
+`VNDetectHumanBodyPoseRequest` fails in the iOS 26.2 simulator with Vision error 9 ("Unable to setup
+request"), so every photo there ends on the "Couldn't measure this photo" screen. The UI tests
+therefore hand the app the points this harness finds for `seated.jpg` on the Mac (`-testKeypoints`).
+The simulator tests prove the screens, the angle maths, dragging and saving; the detection itself is
+only tested here on the Mac, and on a real phone not at all yet.
 
 ## What is not measured here
 
-- The app flow in a simulator or on a phone. On 2026-11-22 the app and the UI tests compiled, but
-  the simulator on the development Mac could not install or launch apps (the machine was out of
-  memory and swap), so `AccurateModeUITests` has not been run yet.
-
+- Detection on a real iPhone. Simulator tests use points found on the Mac (see above).
 - Real patients with a goniometer reading. The numbers above compare against hand-labelled joints
   and estimates by eye, not a clinical measurement.
 - The `checkKneePhoto` prompt against real photos. It is unit tested but has not been run on Vertex.

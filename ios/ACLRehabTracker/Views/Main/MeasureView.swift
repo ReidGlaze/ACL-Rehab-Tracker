@@ -497,8 +497,11 @@ struct MeasureView: View {
                 .padding(.horizontal, AppSpacing.lg)
 
             #if ACL_MODEL_TEST
-            comparisonTable
-                .padding(.horizontal, AppSpacing.lg)
+            // Accurate mode calls no model, so the comparison table would be an empty box.
+            if accurateKeypoints == nil {
+                comparisonTable
+                    .padding(.horizontal, AppSpacing.lg)
+            }
             #endif
 
             // Action Buttons

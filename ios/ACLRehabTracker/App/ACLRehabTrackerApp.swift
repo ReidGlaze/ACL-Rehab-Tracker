@@ -13,6 +13,12 @@ struct ACLRehabTrackerApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
+        #if DEBUG
+        // UI tests: `-resetMeasureMode YES` forgets the saved measuring method, like a fresh install.
+        if UserDefaults.standard.bool(forKey: "resetMeasureMode") {
+            UserDefaults.standard.removeObject(forKey: MeasureMode.storageKey)
+        }
+        #endif
         #if ACL_MODEL_TEST
         guard let path = Bundle.main.path(forResource: "GoogleService-Test", ofType: "plist"),
               let options = FirebaseOptions(contentsOfFile: path) else {

@@ -133,7 +133,14 @@ enum KneePoseEstimator {
     private static func skeleton(in image: CGImage) -> KneeSkeleton? {
         let request = VNDetectHumanBodyPoseRequest()
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up)
-        guard (try? handler.perform([request])) != nil else { return nil }
+        do {
+            try handler.perform([request])
+        } catch {
+            #if DEBUG
+            print("KneePoseEstimator: body pose request failed: \(error)")
+            #endif
+            return nil
+        }
 
         // With several people in the photo, measure the one who takes up the most of it.
         let bodies = (request.results ?? []).compactMap { observation -> (points: [Joint2D: VNRecognizedPoint], span: CGFloat)? in

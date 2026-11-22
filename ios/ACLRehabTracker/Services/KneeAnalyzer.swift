@@ -26,9 +26,24 @@ final class KneeAnalyzer {
         guard let cgImage = image.uprightCGImage(maxDimension: 2000) else { return nil }
         let bend: KneeBend = type == .flexion ? .flexion : .extension
         let requested: KneeLeg? = injuredKnee.map { $0 == .left ? .left : .right }
-        return await Task.detached(priority: .userInitiated) {
+        let estimate = await Task.detached(priority: .userInitiated) {
             KneePoseEstimator.estimate(image: cgImage, bend: bend, requested: requested)
         }.value
+        #if DEBUG && targetEnvironment(simulator)
+        // Vision's body pose request cannot run in the simulator (error 9, "Unable to setup request").
+        // UI tests pass the points the same estimator found on a Mac: `-testKeypoints hx,hy,kx,ky,ax,ay`.
+        if estimate == nil, let raw = UserDefaults.standard.string(forKey: "testKeypoints") {
+            let v = raw.split(separator: ",").compactMap { Double($0) }
+            if v.count == 6 {
+                return KneePoseEstimate(
+                    keypoints: KneeKeypoints(hip: NormalizedPoint(x: v[0], y: v[1]),
+                                             knee: NormalizedPoint(x: v[2], y: v[3]),
+                                             ankle: NormalizedPoint(x: v[4], y: v[5])),
+                    measuredLeg: requested ?? .right, confidence: 0.6, flexion3D: nil)
+            }
+        }
+        #endif
+        return estimate
     }
 
     /// Returns nil when the check couldn't run (offline, rate limited, not deployed). A check that
