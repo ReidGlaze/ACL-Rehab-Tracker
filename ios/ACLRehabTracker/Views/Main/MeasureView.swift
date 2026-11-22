@@ -8,6 +8,8 @@ enum MeasureScreenState {
     case processing
     case result
     case saving
+    /// Accurate mode only: the photo can't be measured, or the AI check asked for a retake.
+    case retake
 }
 
 struct MeasureView: View {
@@ -30,6 +32,29 @@ struct MeasureView: View {
     @AppStorage("aiAnalysisConsented") private var aiAnalysisConsented = false
     @State private var showConsentSheet = false
     @State private var pendingAction: PendingAction?
+
+    // Accurate mode. A missing stored value means the original Standard photo method.
+    @AppStorage(MeasureMode.storageKey) private var measureModeRaw = MeasureMode.standard.rawValue
+    @State private var showModeSheet = false
+    /// Non-nil while an Accurate-mode result is on screen. Nil for a Standard photo result.
+    @State private var accurateKeypoints: KneeKeypoints?
+    @State private var accurateAdjusted = false
+    @State private var accurateNote: String?
+    @State private var retakeIssue: RetakeIssue?
+    /// Which method the spinner is describing; differs from the setting during a one-photo fallback.
+    @State private var processingMode: MeasureMode = .standard
+
+    private var measureMode: MeasureMode { MeasureMode(rawValue: measureModeRaw) ?? .standard }
+
+    enum RetakeIssue: Equatable {
+        /// The phone couldn't find a hip, knee and ankle. Carries the AI check's note, if any.
+        case noLeg(String?)
+        /// The AI check said the photo isn't usable, with what to change.
+        case check(String?)
+    }
+
+    /// Below this joint confidence the result is shown with a note to check the dots.
+    private static let lowConfidence = 0.3
     #if ACL_MODEL_TEST
     @State private var comparisonResults: [ModelTestResult] = []
 
@@ -74,6 +99,8 @@ struct MeasureView: View {
                 cameraView
             case .result, .saving:
                 resultView
+            case .retake:
+                retakeView
             }
         }
         .overlay(alignment: .top) {
@@ -108,6 +135,30 @@ struct MeasureView: View {
                 handleSelectedPhoto(image)
             }
         }
+        .sheet(isPresented: $showModeSheet) {
+            MeasureModeSheet(selection: Binding(
+                get: { measureMode },
+                set: { newMode in
+                    guard newMode != measureMode else { return }
+                    measureModeRaw = newMode.rawValue
+                    AnalyticsService.measureModeSelected(newMode)
+                }
+            ))
+            .presentationDetents([.large])
+        }
+        #if DEBUG
+        .task {
+            // Screenshots: `-showMeasureModeSheet YES` opens the method chooser.
+            if UserDefaults.standard.bool(forKey: "showMeasureModeSheet") {
+                showModeSheet = true
+            }
+            // UI tests: `-testPhoto /path/to.jpg` feeds a photo straight in (the simulator has no camera).
+            if let path = UserDefaults.standard.string(forKey: "testPhoto"), let image = UIImage(contentsOfFile: path) {
+                try? await Task.sleep(for: .milliseconds(800))
+                handleSelectedPhoto(image)
+            }
+        }
+        #endif
         .sheet(isPresented: $showConsentSheet) {
             AIConsentView(
                 onAgree: {
@@ -147,7 +198,13 @@ struct MeasureView: View {
             // Type Toggle
             typeToggle
                 .padding(.horizontal, AppSpacing.lg)
-                .padding(.bottom, AppSpacing.md)
+                .padding(.bottom, AppSpacing.sm)
+
+            // Measuring method (Standard photo by default)
+            MeasureModeRow(mode: measureMode) { showModeSheet = true }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.sm)
+                .disabled(screenState == .processing)
 
             #if ACL_MODEL_TEST
             modelTestControls
@@ -160,14 +217,14 @@ struct MeasureView: View {
                 .padding(.horizontal, AppSpacing.lg)
 
             // Instructions
-            Text(measurementType == .extension
-                 ? "Straighten your leg as much as possible and capture from the side"
-                 : "Bend your knee as much as possible and capture from the side")
+            Text(measureMode.instruction(for: measurementType))
                 .font(AppTypography.subhead)
                 .foregroundColor(AppColors.textSecondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.vertical, AppSpacing.md)
+                .accessibilityIdentifier("measure.instruction")
 
             // Bottom controls: Library | Capture | Flip Camera
             cameraControls
@@ -302,7 +359,7 @@ struct MeasureView: View {
                     Color.black.opacity(0.6)
 
                     // Spinner + text
-                    AnalyzingStatusView()
+                    AnalyzingStatusView(mode: processingMode)
                 }
             } else if isCameraLoading {
                 VStack(spacing: AppSpacing.md) {
@@ -341,6 +398,72 @@ struct MeasureView: View {
     }
 
 
+    // MARK: - Retake View (Accurate mode)
+    private var retakeView: some View {
+        let noLeg: Bool
+        let note: String?
+        switch retakeIssue {
+        case .noLeg(let message): noLeg = true; note = message
+        case .check(let message): noLeg = false; note = message
+        case nil: noLeg = true; note = nil
+        }
+
+        return VStack(spacing: AppSpacing.lg) {
+            Text(noLeg ? "Couldn't measure this photo" : "Let's retake that")
+                .font(AppTypography.title2)
+                .foregroundColor(AppColors.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.lg)
+
+            photoPreview
+                .padding(.horizontal, AppSpacing.lg)
+
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                Text(note ?? (noLeg
+                    ? "Your phone couldn't find your hip, knee and ankle."
+                    : "This photo may not give a reliable angle."))
+                    .font(AppTypography.headline)
+                    .foregroundColor(AppColors.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("retake.message")
+
+                Text("Accurate mode needs your whole body in the photo, head to feet, taken from the side.")
+                    .font(AppTypography.subhead)
+                    .foregroundColor(AppColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(AppSpacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.surface)
+            .cornerRadius(AppRadius.lg)
+            .padding(.horizontal, AppSpacing.lg)
+
+            VStack(spacing: AppSpacing.sm) {
+                Button(action: handleRetake) {
+                    Text("Retake")
+                }
+                .buttonStyle(PrimaryButtonStyle(isEnabled: true))
+
+                if noLeg {
+                    Button(action: measureWithStandardInstead) {
+                        Text("Measure it with Standard photo")
+                    }
+                    .buttonStyle(SecondaryButtonStyle(isEnabled: true))
+                    .accessibilityIdentifier("retake.useStandard")
+                } else {
+                    Button(action: { screenState = .result }) {
+                        Text("Use this photo anyway")
+                    }
+                    .buttonStyle(SecondaryButtonStyle(isEnabled: true))
+                    .accessibilityIdentifier("retake.useAnyway")
+                }
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.xl)
+        }
+    }
+
     // MARK: - Result View
     private var resultView: some View {
         VStack(spacing: AppSpacing.lg) {
@@ -352,9 +475,22 @@ struct MeasureView: View {
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.top, AppSpacing.lg)
 
-            // Photo Preview
-            photoPreview
+            // Photo Preview. In Accurate mode the measured lines are drawn on it and can be adjusted.
+            if let image = cameraService.capturedImage, accurateKeypoints != nil {
+                KneeKeypointEditor(
+                    image: image,
+                    keypoints: Binding(
+                        get: { accurateKeypoints ?? KneeKeypoints(hip: .init(x: 0, y: 0), knee: .init(x: 0, y: 0), ankle: .init(x: 0, y: 0)) },
+                        set: { accurateKeypoints = $0 }
+                    ),
+                    onEdit: { accurateAdjusted = true }
+                )
                 .padding(.horizontal, AppSpacing.lg)
+                .disabled(screenState == .saving)
+            } else {
+                photoPreview
+                    .padding(.horizontal, AppSpacing.lg)
+            }
 
             // Angle Display
             angleDisplay
@@ -400,13 +536,24 @@ struct MeasureView: View {
                 .foregroundColor(AppColors.textSecondary)
                 .tracking(1)
 
-            Text("\(poseResult?.angle ?? 0)\u{00B0}")
+            Text("\(displayedAngle)\u{00B0}")
                 .font(.system(size: 64, weight: .bold))
                 .foregroundColor(AppColors.text)
+                .accessibilityIdentifier("measure.angle")
 
             Text("Goal: \(measurementType.goalAngle)\u{00B0}")
                 .font(AppTypography.body)
                 .foregroundColor(AppColors.textTertiary)
+
+            if accurateKeypoints != nil {
+                Text(accurateNote ?? "Measured on your phone from the dots on the photo. Drag a dot if it's off.")
+                    .font(AppTypography.footnote)
+                    .foregroundColor(accurateNote == nil ? AppColors.textSecondary : AppColors.warning)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, AppSpacing.xs)
+                    .accessibilityIdentifier("measure.accurateNote")
+            }
 
             // Disclaimer
             Text("For personal tracking only. Not for medical diagnosis.")
@@ -541,6 +688,7 @@ struct MeasureView: View {
         impact.impactOccurred()
 
         // Show processing state immediately so user knows photo was taken
+        processingMode = measureMode
         screenState = .processing
 
         let type = measurementType
@@ -552,14 +700,10 @@ struct MeasureView: View {
                 // Capture the actual photo (capturedImage set by delegate)
                 let imagePath = try await cameraService.capturePhoto()
 
-                // Send image directly to Gemini for angle analysis with injury info
+                // Measure with the selected method
                 stage = .analysis
-                let detectedPose = try await analyze(imagePath: imagePath)
+                try await measure(imagePath: imagePath, type: type)
                 AnalyticsService.measurementAnalyzed(type: type, source: .camera)
-                await MainActor.run {
-                    poseResult = detectedPose
-                    screenState = .result
-                }
             } catch {
                 AnalyticsService.measurementFailed(type: type, source: .camera, stage: stage)
                 await MainActor.run {
@@ -575,6 +719,7 @@ struct MeasureView: View {
 
     private func handleSelectedPhoto(_ image: UIImage) {
         // Show processing spinner immediately
+        processingMode = measureMode
         screenState = .processing
 
         let type = measurementType
@@ -599,15 +744,10 @@ struct MeasureView: View {
                     cameraService.capturedImagePath = fileURL.path
                 }
 
-                // Analyze image with Gemini
+                // Measure with the selected method
                 stage = .analysis
-                let detectedPose = try await analyze(imagePath: fileURL.path)
+                try await measure(imagePath: fileURL.path, type: type)
                 AnalyticsService.measurementAnalyzed(type: type, source: .library)
-
-                await MainActor.run {
-                    poseResult = detectedPose
-                    screenState = .result
-                }
             } catch {
                 AnalyticsService.measurementFailed(type: type, source: .library, stage: stage)
                 await MainActor.run {
@@ -621,12 +761,108 @@ struct MeasureView: View {
 
     private func handleRetake() {
         poseResult = nil
+        accurateKeypoints = nil
+        accurateAdjusted = false
+        accurateNote = nil
+        retakeIssue = nil
         cameraService.capturedImage = nil
         cameraService.capturedImagePath = nil
         screenState = .camera
         #if ACL_MODEL_TEST
         comparisonResults = []
         #endif
+    }
+
+    /// The angle on the result screen. In Accurate mode it is computed from the dots, live.
+    private var displayedAngle: Int {
+        if let keypoints = accurateKeypoints, let image = cameraService.capturedImage,
+           let flexion = KneeAngleMath.flexion(keypoints, imageSize: image.size) {
+            return KneeAngleMath.display(flexion)
+        }
+        return poseResult?.angle ?? 0
+    }
+
+    /// Runs the selected method on the captured photo and moves to the next screen.
+    private func measure(imagePath: String, type: MeasurementType) async throws {
+        let mode = await MainActor.run { measureMode }
+        if mode == .accurate, let image = await MainActor.run(body: { cameraService.capturedImage }) {
+            await measureAccurately(image: image, type: type)
+            return
+        }
+        let detectedPose = try await analyze(imagePath: imagePath)
+        await MainActor.run {
+            poseResult = detectedPose
+            screenState = .result
+        }
+    }
+
+    /// Accurate mode: the phone finds hip, knee and ankle while Gemini checks the photo is usable.
+    /// The check can ask for a retake but can never block: if it can't run, the measurement stands.
+    @MainActor
+    private func measureAccurately(image: UIImage, type: MeasurementType) async {
+        async let pose = KneeAnalyzer.shared.detectPose(image: image, type: type, injuredKnee: userProfile?.injuredKnee)
+        async let check = KneeAnalyzer.shared.checkPhoto(image: image, type: type)
+        let estimate = await pose
+        let checked = await check
+
+        #if DEBUG
+        // UI tests: the photo check needs a deployed backend, so its verdict can be forced.
+        let verdict = UserDefaults.standard.string(forKey: "forceCheckMessage")
+            .map { KneePhotoCheck(passed: false, problem: "framing", message: $0) } ?? checked
+        #else
+        let verdict = checked
+        #endif
+
+        guard let estimate else {
+            AnalyticsService.accurateModeOutcome("no_leg")
+            retakeIssue = .noLeg(verdict?.passed == false ? verdict?.message : nil)
+            screenState = .retake
+            return
+        }
+
+        accurateKeypoints = estimate.keypoints
+        accurateAdjusted = false
+        accurateNote = estimate.confidence < Self.lowConfidence
+            ? "Your phone wasn't sure about this photo. Check the dots and drag any that are off."
+            : nil
+
+        if let verdict, !verdict.passed {
+            AnalyticsService.accurateModeOutcome("check_failed")
+            retakeIssue = .check(verdict.message)
+            screenState = .retake
+            return
+        }
+        AnalyticsService.accurateModeOutcome(verdict == nil ? "measured_unchecked" : "measured")
+        screenState = .result
+    }
+
+    /// From the retake screen: measure this one photo the original way instead.
+    private func measureWithStandardInstead() {
+        guard let imagePath = cameraService.capturedImagePath else {
+            handleRetake()
+            return
+        }
+        let type = measurementType
+        accurateKeypoints = nil
+        retakeIssue = nil
+        processingMode = .standard
+        screenState = .processing
+        Task {
+            do {
+                let detectedPose = try await analyze(imagePath: imagePath)
+                await MainActor.run {
+                    poseResult = detectedPose
+                    screenState = .result
+                }
+            } catch {
+                AnalyticsService.measurementFailed(type: type, source: nil, stage: .analysis)
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                    handleRetake()
+                }
+            }
+        }
     }
 
     /// Release builds measure with the production function. Test builds measure the same photo
@@ -700,8 +936,13 @@ struct MeasureView: View {
     }
 
     private func handleSave() {
-        guard let result = poseResult,
+        guard poseResult != nil || accurateKeypoints != nil,
               let uid = authService.currentUserId else { return }
+
+        // Read once, before the screen changes: in Accurate mode the angle comes from the dots.
+        let angle = displayedAngle
+        let method: MeasurementMethod? = accurateKeypoints != nil ? .onDevice : nil
+        let adjusted: Bool? = accurateKeypoints != nil ? accurateAdjusted : nil
 
         screenState = .saving
 
@@ -733,10 +974,12 @@ struct MeasureView: View {
                 let measurement = Measurement(
                     id: measurementId,
                     type: measurementType,
-                    angle: result.angle,
+                    angle: angle,
                     timestamp: Date(),
                     weekPostOp: weekPostOp,
-                    photoUrl: photoUrl
+                    photoUrl: photoUrl,
+                    method: method,
+                    adjusted: adjusted
                 )
 
                 _ = try await FirestoreService.shared.saveMeasurement(uid: uid, measurement: measurement)
@@ -813,11 +1056,24 @@ struct ImagePickerView: UIViewControllerRepresentable {
 /// through steps to show progress instead of sitting on a static "Analyzing...".
 /// Keep the steps and timings in sync with Android's `AnalyzingStatus` in MeasureScreen.kt.
 private struct AnalyzingStatusView: View {
-    private static let steps: [(message: String, startsAt: Duration)] = [
+    var mode: MeasureMode = .standard
+
+    private static let standardSteps: [(message: String, startsAt: Duration)] = [
         ("Analyzing your photo...", .zero),
         ("Measuring your knee angle...", .seconds(4)),
         ("Almost done...", .seconds(11)),
     ]
+
+    /// Accurate mode runs on the phone, so it is quicker; the wait is the photo check.
+    private static let accurateSteps: [(message: String, startsAt: Duration)] = [
+        ("Finding your hip, knee and ankle...", .zero),
+        ("Checking the photo...", .seconds(2)),
+        ("Almost done...", .seconds(7)),
+    ]
+
+    private var steps: [(message: String, startsAt: Duration)] {
+        mode == .accurate ? Self.accurateSteps : Self.standardSteps
+    }
 
     @State private var stepIndex = 0
 
@@ -826,19 +1082,19 @@ private struct AnalyzingStatusView: View {
             ProgressView()
                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 .scaleEffect(1.5)
-            Text(Self.steps[stepIndex].message)
+            Text(steps[stepIndex].message)
                 .font(AppTypography.headline)
                 .foregroundColor(.white)
                 .contentTransition(.opacity)
                 .animation(.easeInOut, value: stepIndex)
-            Text("This usually takes about 15 seconds")
+            Text(mode == .accurate ? "This usually takes a few seconds" : "This usually takes about 15 seconds")
                 .font(AppTypography.footnote)
                 .foregroundColor(.white.opacity(0.7))
         }
         .accessibilityElement(children: .combine)
         .task {
-            for index in Self.steps.indices.dropFirst() {
-                let wait = Self.steps[index].startsAt - Self.steps[index - 1].startsAt
+            for index in steps.indices.dropFirst() {
+                let wait = steps[index].startsAt - steps[index - 1].startsAt
                 do {
                     try await Task.sleep(for: wait)
                 } catch {

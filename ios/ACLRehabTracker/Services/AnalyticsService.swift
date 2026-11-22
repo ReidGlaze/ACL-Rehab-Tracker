@@ -63,6 +63,16 @@ enum AnalyticsService {
         ])
     }
 
+    /// The user switched measuring method in the chooser.
+    static func measureModeSelected(_ mode: MeasureMode) {
+        Analytics.logEvent("measure_mode_selected", parameters: ["mode": mode.rawValue])
+    }
+
+    /// How an Accurate-mode photo ended: measured, measured_unchecked, no_leg or check_failed.
+    static func accurateModeOutcome(_ outcome: String) {
+        Analytics.logEvent("accurate_mode_outcome", parameters: ["outcome": outcome])
+    }
+
     /// SwiftUI tabs don't trigger automatic screen tracking, so log them explicitly.
     static func screenViewed(_ name: String) {
         Analytics.logEvent(AnalyticsEventScreenView, parameters: [

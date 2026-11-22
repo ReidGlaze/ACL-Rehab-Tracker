@@ -404,7 +404,9 @@ struct MeasurementRow: View {
                             .foregroundColor(AppColors.text)
                     }
 
-                    Text(DateHelpers.formatTime(measurement.timestamp))
+                    Text(measurement.method == .onDevice
+                         ? "\(DateHelpers.formatTime(measurement.timestamp)) \u{00B7} Accurate mode"
+                         : DateHelpers.formatTime(measurement.timestamp))
                         .font(AppTypography.caption1)
                         .foregroundColor(AppColors.textSecondary)
                 }

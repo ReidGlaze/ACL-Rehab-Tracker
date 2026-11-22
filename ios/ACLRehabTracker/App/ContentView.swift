@@ -149,6 +149,14 @@ struct ContentView: View {
         .onChange(of: selectedTab, initial: true) { _, tab in
             AnalyticsService.screenViewed(tab.rawValue)
         }
+        #if DEBUG
+        .task {
+            // UI tests and screenshots: `-startTab Measure` opens straight on a tab.
+            if let raw = UserDefaults.standard.string(forKey: "startTab"), let tab = MainTab(rawValue: raw) {
+                selectedTab = tab
+            }
+        }
+        #endif
     }
 
     // MARK: - Authentication

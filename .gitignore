@@ -98,3 +98,7 @@ ios/.bundle/
 **/GoogleService-Test.plist
 functions/.env*
 *.log
+
+# Accuracy harness: photos of people and run outputs stay local
+accuracy/fixtures/
+accuracy/results/

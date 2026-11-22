@@ -30,9 +30,6 @@
       shouldUseLaunchSchemeArgsEnv = "YES">
       <TestPlans>
          <TestPlanReference
-            reference = "container:ACLRehabTracker.xctestplan">
-         </TestPlanReference>
-         <TestPlanReference
             reference = "container:ACLRehabTracker/ACLRehabTracker.xctestplan"
             default = "YES">
          </TestPlanReference>

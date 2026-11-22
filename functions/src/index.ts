@@ -207,3 +207,4 @@ export const analyzeKneeAngle = onCall<AnalyzeKneeAngleRequest>(
 
 export { analyzeKneeAngleGeminiTest } from "./geminiTest";
 export { analyzeKneeAngleClaudeTest } from "./claudeTest";
+export { checkKneePhoto } from "./kneeCheck";
