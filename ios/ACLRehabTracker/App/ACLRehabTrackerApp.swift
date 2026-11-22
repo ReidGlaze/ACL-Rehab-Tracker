@@ -17,6 +17,11 @@ struct ACLRehabTrackerApp: App {
         // UI tests: `-resetMeasureMode YES` forgets the saved measuring method, like a fresh install.
         if UserDefaults.standard.bool(forKey: "resetMeasureMode") {
             UserDefaults.standard.removeObject(forKey: MeasureMode.storageKey)
+            UserDefaults.standard.removeObject(forKey: "accuratePoseGuideSeen")
+            UserDefaults.standard.removeObject(forKey: "accurateSelfTimerSeconds")
+        }
+        if UserDefaults.standard.bool(forKey: "resetSelfTimer") {
+            UserDefaults.standard.removeObject(forKey: "accurateSelfTimerSeconds")
         }
         #endif
         #if ACL_MODEL_TEST

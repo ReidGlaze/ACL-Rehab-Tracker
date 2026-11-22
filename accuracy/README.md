@@ -49,6 +49,22 @@ Bad framing (3): both knee close-ups return "no complete leg", which the app tur
 screen. A front view is measured (it reads 2° for a knee lifted to about 90°), which is wrong:
 only the AI photo check can catch that case.
 
+## Which side faces the camera, 2026-11-22
+
+The 7 rehab-style photos plus the front view, each also mirrored (16 photos). Checked by eye:
+
+- 6 clear side views and their 6 mirror images: all 12 correct, and every mirror image flipped.
+- Lying flat with both legs straight: "can't tell" both ways (no bent knee, face pointing up).
+  The app then shows the softer "couldn't tell which side" note.
+- Front view and its mirror: "can't tell", as it should be. Before the shoulder-width rule the
+  mirrored one was read as a side view.
+
+This is a small, AI-generated set. It has not been run on real patients or on selfie-camera photos;
+a mirrored photo would report the opposite side.
+
+One leg-choice miss showed up here that is not new: in the mirrored heel-slide photo the straight
+leg was measured (11 instead of about 119), most likely because the bent leg's ankle was not found.
+
 ## Other tools
 
 - `accuracy/render_chooser.sh <outDir>` renders the method chooser and the Measure-tab method row
@@ -59,10 +75,12 @@ only the AI photo check can catch that case.
   It needs `TEST_RUNNER_PHOTO_DIR` with `seated.jpg` and `closeup.jpg`; the last two tests call the
   test Firebase project and only run with `TEST_RUNNER_ACL_NETWORK=1`. Grant the camera first or its
   alert covers the screen: `xcrun simctl privacy booted grant camera com.twintipsolutions.ACLRehabTracker.test`.
-  All six passed on 2026-11-22 (iPhone 17 simulator, iOS 26.2).
+  Also covered: the pose guide, the self-timer count and cancel, and the wrong-side and
+  unknown-side notes. All ten passed on 2026-11-22 (iPhone 17 simulator, iOS 26.2).
 - Debug launch arguments: `-startTab Measure`, `-measureMode accurate` (pins the mode for that run),
   `-resetMeasureMode YES`, `-showMeasureModeSheet YES`, `-testPhoto <path>`,
-  `-forceCheckMessage <text>` and, simulator only, `-testKeypoints hx,hy,kx,ky,ax,ay`.
+  `-forceCheckMessage <text>` and, simulator only, `-testKeypoints hx,hy,kx,ky,ax,ay` with `-testFacing left|right|unknown`. Also
+  `-testInjuredKnee left|right` (stands in for the saved profile) and `-resetSelfTimer YES`.
 
 ## Vision does not run in the simulator
 
@@ -75,6 +93,9 @@ only tested here on the Mac, and on a real phone not at all yet.
 ## What is not measured here
 
 - Detection on a real iPhone. Simulator tests use points found on the Mac (see above).
+- The self-timer on a real phone: that the beeps are loud enough across a room, that they play
+  with the ring switch on silent, and that the photo fires at zero. The simulator has no camera, so
+  the tests only check the count and cancelling.
 - Real patients with a goniometer reading. The numbers above compare against hand-labelled joints
   and estimates by eye, not a clinical measurement.
 - The `checkKneePhoto` prompt against real photos. It is unit tested but has not been run on Vertex.

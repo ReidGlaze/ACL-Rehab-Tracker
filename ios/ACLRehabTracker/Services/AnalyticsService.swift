@@ -73,6 +73,11 @@ enum AnalyticsService {
         Analytics.logEvent("accurate_mode_outcome", parameters: ["outcome": outcome])
     }
 
+    /// The Accurate-mode self-timer was set to 0 (off), 5 or 10 seconds.
+    static func selfTimerChanged(seconds: Int) {
+        Analytics.logEvent("self_timer_changed", parameters: ["seconds": seconds])
+    }
+
     /// SwiftUI tabs don't trigger automatic screen tracking, so log them explicitly.
     static func screenViewed(_ name: String) {
         Analytics.logEvent(AnalyticsEventScreenView, parameters: [

@@ -49,6 +49,7 @@ struct KneePoseRun {
                 row["angle"] = KneeAngleMath.flexion(e.keypoints, imageSize: size) ?? NSNull()
                 row["angle3D"] = e.flexion3D ?? NSNull()
                 row["leg"] = e.measuredLeg.rawValue
+                row["facing"] = e.sideFacingCamera?.rawValue ?? "unknown"
                 row["confidence"] = e.confidence
             }
             row["ms"] = Int(Date().timeIntervalSince(started) * 1000)

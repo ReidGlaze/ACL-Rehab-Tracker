@@ -82,6 +82,28 @@ struct KneeMathTest {
             expect(turned?.width == 20 && turned?.height == 40, "a quarter turn swaps width and height")
         }
 
+        // Which side faces the camera. Pixels, y down.
+        let up = CGVector(dx: 0, dy: -1)
+        expect(KneeGeometry.sideFacingCamera(up: up, forward: CGVector(dx: 1, dy: 0)) == .right, "standing, facing the right edge: right side to camera")
+        expect(KneeGeometry.sideFacingCamera(up: up, forward: CGVector(dx: -1, dy: 0)) == .left, "standing, facing the left edge: left side to camera")
+        expect(KneeGeometry.sideFacingCamera(up: CGVector(dx: -1, dy: 0), forward: up) == .right, "on the back, head at the left edge: right side to camera")
+        expect(KneeGeometry.sideFacingCamera(up: CGVector(dx: 1, dy: 0), forward: up) == .left, "on the back, head at the right edge: left side to camera")
+        expect(KneeGeometry.sideFacingCamera(up: up, forward: CGVector(dx: 0.1, dy: 1)) == nil, "a nose straight below the ears is a front view")
+        // Seated facing right: thigh runs right, shin runs down. Mirrored, it faces left.
+        let seatedRight = KneeKeypoints(hip: p(0.3, 0.5), knee: p(0.6, 0.5), ankle: p(0.6, 0.8))
+        let seatedLeft = KneeKeypoints(hip: p(0.7, 0.5), knee: p(0.4, 0.5), ankle: p(0.4, 0.8))
+        expect(KneeGeometry.sideFacingCamera(leg: seatedRight, imageSize: square) == .right, "a knee bent toward the right edge")
+        expect(KneeGeometry.sideFacingCamera(leg: seatedLeft, imageSize: square) == .left, "a knee bent toward the left edge")
+        expect(KneeGeometry.sideFacingCamera(leg: KneeKeypoints(hip: p(0.2, 0.5), knee: p(0.5, 0.5), ankle: p(0.8, 0.5)), imageSize: square) == nil, "a straight leg says nothing")
+        expect(KneeGeometry.sideFacingCamera(head: .right, headInView: true, legs: [.right, nil]) == .right, "head and knee agree")
+        expect(KneeGeometry.sideFacingCamera(head: .right, headInView: true, legs: [.left, nil]) == nil, "head and knee disagree")
+        expect(KneeGeometry.sideFacingCamera(head: nil, headInView: false, legs: [.left, nil]) == .left, "face hidden: the bent knee decides")
+        expect(KneeGeometry.sideFacingCamera(head: nil, headInView: true, legs: [.left, nil]) == nil, "front view: a raised knee is not trusted")
+        expect(KneeGeometry.sideFit(requested: nil, facing: .left) == .notAsked, "no saved side, nothing to compare")
+        expect(KneeGeometry.sideFit(requested: .left, facing: .left) == .matches, "saved side faces the camera")
+        expect(KneeGeometry.sideFit(requested: .left, facing: .right) == .opposite(facing: .right), "other side faces the camera")
+        expect(KneeGeometry.sideFit(requested: .left, facing: nil) == .unknown, "side can't be told")
+
         print(failures == 0 ? "knee math: all checks passed" : "knee math: \(failures) FAILED")
         exit(failures == 0 ? 0 : 1)
     }

@@ -199,6 +199,24 @@ struct MeasureModeChooser: View {
     }
 }
 
+/// Small capsule buttons that sit on top of the camera preview.
+struct CameraPillStyle: ButtonStyle {
+    let isOn: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(AppTypography.footnote.weight(.semibold))
+            .foregroundColor(.white)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.vertical, 7)
+            .padding(.horizontal, 11)
+            .background(isOn ? AppColors.primary : Color.black.opacity(0.55))
+            .clipShape(Capsule())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
 #Preview {
     MeasureModeSheet(selection: .constant(.accurate))
 }

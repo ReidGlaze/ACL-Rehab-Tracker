@@ -76,6 +76,8 @@ final class AccurateModeUITests: XCTestCase {
         XCTAssertTrue(row.label.contains("Standard photo"), "Standard photo is what the row shows by default")
         XCTAssertTrue(app.staticTexts["measure.instruction"].label.contains("capture from the side"),
                       "The original instruction text is unchanged in Standard")
+        XCTAssertFalse(app.buttons["measure.poseGuide"].exists, "Standard photo has no pose guide button")
+        XCTAssertFalse(app.buttons["measure.selfTimer"].exists, "Standard photo has no self-timer")
         shot("01-measure-standard")
 
         row.tap()
@@ -89,6 +91,12 @@ final class AccurateModeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["3. Your phone measures the angle"].waitForExistence(timeout: 3))
         shot("04-chooser-explainer")
         app.buttons["measureMode.done"].tap()
+
+        // The first switch to Accurate mode shows how to pose, once.
+        XCTAssertTrue(app.buttons["poseGuide.done"].waitForExistence(timeout: 5))
+        shot("05a-pose-guide-first-time")
+        app.swipeUp()
+        app.buttons["poseGuide.done"].tap()
 
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(row.label.contains("Accurate mode"))
@@ -104,7 +112,91 @@ final class AccurateModeUITests: XCTestCase {
         XCTAssertTrue(row.label.contains("Standard photo"))
     }
 
+    // MARK: - Pose guide and self-timer
+
+    @MainActor
+    func testPoseGuideShowsBothMovementsForTheSavedLeg() throws {
+        try launch(mode: "accurate", extra: ["-testInjuredKnee", "left"])
+
+        let guide = app.buttons["measure.poseGuide"]
+        XCTAssertTrue(guide.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["poseGuide.done"].exists, "The guide only opens by itself the first time the mode is chosen")
+        guide.tap()
+
+        XCTAssertTrue(app.buttons["poseGuide.done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["poseGuide.extension"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["poseGuide.flexion"].exists)
+        shot("12-pose-guide-extension")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Your left leg nearest the camera"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Phone propped at knee height"].exists)
+        shot("13-pose-guide-rules")
+        app.buttons["poseGuide.done"].tap()
+
+        // Flexion puts the flexion drawing first.
+        app.buttons["Flexion"].tap()
+        guide.tap()
+        XCTAssertTrue(app.buttons["poseGuide.done"].waitForExistence(timeout: 5))
+        shot("14-pose-guide-flexion")
+        app.swipeUp()
+        app.buttons["poseGuide.done"].tap()
+    }
+
+    @MainActor
+    func testSelfTimerCountsDownAndCanBeCancelled() throws {
+        try launch(mode: "accurate", extra: ["-resetSelfTimer", "YES"])
+
+        let timer = app.buttons["measure.selfTimer"]
+        XCTAssertTrue(timer.waitForExistence(timeout: 10))
+        XCTAssertEqual(timer.label, "Self-timer off")
+        timer.tap()
+        XCTAssertEqual(timer.label, "Self-timer 5 seconds")
+        timer.tap()
+        XCTAssertEqual(timer.label, "Self-timer 10 seconds")
+        shot("15-self-timer-10s")
+
+        let capture = app.buttons["measure.capture"]
+        capture.tap()
+        let count = app.staticTexts["measure.countdown"]
+        XCTAssertTrue(count.waitForExistence(timeout: 2), "The count is on screen")
+        let first = Int(count.label) ?? 0
+        XCTAssertTrue((9...10).contains(first), "Starts at 10, got \(count.label)")
+        shot("16-self-timer-counting")
+        sleep(3)
+        XCTAssertLessThan(Int(count.label) ?? 99, first, "The count goes down")
+
+        capture.tap()
+        XCTAssertFalse(count.waitForExistence(timeout: 2), "Tapping the button again cancels")
+        XCTAssertTrue(timer.exists)
+
+        timer.tap()
+        XCTAssertEqual(timer.label, "Self-timer off")
+    }
+
     // MARK: - Measuring
+
+    @MainActor
+    func testWrongSideFacingTheCameraShowsANote() throws {
+        // The seated photo shows the right side of the body.
+        try launch(mode: "accurate", photo: "seated.jpg", extra: ["-testInjuredKnee", "left"])
+        XCTAssertNotNil(angle())
+        let note = app.staticTexts["measure.accurateNote"].label
+        XCTAssertTrue(note.contains("right side is facing the camera"), note)
+        XCTAssertTrue(note.contains("left knee"), note)
+        shot("17-accurate-wrong-side-note")
+    }
+
+    @MainActor
+    func testUnknownSideShowsASofterNoteAndMatchingSideShowsNone() throws {
+        try launch(mode: "accurate", photo: "seated.jpg", extra: ["-testInjuredKnee", "left", "-testFacing", "unknown"])
+        XCTAssertNotNil(angle())
+        XCTAssertTrue(app.staticTexts["measure.accurateNote"].label.contains("Couldn't tell which side"))
+        app.terminate()
+
+        try launch(mode: "accurate", photo: "seated.jpg", extra: ["-testInjuredKnee", "right"])
+        XCTAssertNotNil(angle())
+        XCTAssertTrue(app.staticTexts["measure.accurateNote"].label.hasPrefix("Measured on your phone"))
+    }
 
     @MainActor
     func testAccurateModeMeasuresAWholeBodyPhotoOnDevice() throws {

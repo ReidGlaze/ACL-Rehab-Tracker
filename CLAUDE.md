@@ -34,6 +34,17 @@ The Measure tab has two methods, chosen in the "Method" row. The choice is store
   photo is usable; if it can't run, the on-device result is shown anyway. The result screen draws
   the three points on the photo and they can be dragged.
 
+Accurate mode only (none of this shows in Standard photo):
+- **Which leg**: the knee saved at onboarding is the one measured. The estimator also works out
+  which side of the body faces the camera (`sideFacingCamera`: head direction, bent-knee direction,
+  shoulder width for front views). If that is the other side, or can't be told, the result shows a
+  note (`MeasureView.resultNote`) instead of guessing silently. Vision's own left/right labels are
+  unreliable in profile, so when the two legs clearly differ the one doing the movement is measured.
+- **Pose guide**: `PoseGuideSheet` (drawings for flexion and extension plus four rules). Opens once
+  when Accurate mode is first chosen, and from "How to pose" on the camera preview.
+- **Self-timer**: off / 5 s / 10 s pill on the camera preview. Counts on screen and with beeps
+  (`CountdownBeeper`, plays even on silent); tapping the capture button again cancels.
+
 Saved measurements are the same Firestore documents for both. Accurate mode adds two optional
 fields, `method: "on_device"` and `adjusted`; documents without them are Standard photo ones.
 Android has Standard photo only for now.

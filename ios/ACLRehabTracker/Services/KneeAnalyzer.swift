@@ -39,7 +39,10 @@ final class KneeAnalyzer {
                     keypoints: KneeKeypoints(hip: NormalizedPoint(x: v[0], y: v[1]),
                                              knee: NormalizedPoint(x: v[2], y: v[3]),
                                              ankle: NormalizedPoint(x: v[4], y: v[5])),
-                    measuredLeg: requested ?? .right, confidence: 0.6, flexion3D: nil)
+                    measuredLeg: requested ?? .right, confidence: 0.6,
+                    // `-testFacing left|right|unknown`: which side the photo shows (the seated photo shows the right).
+                    sideFacingCamera: KneeLeg(rawValue: UserDefaults.standard.string(forKey: "testFacing") ?? "right"),
+                    flexion3D: nil)
             }
         }
         #endif

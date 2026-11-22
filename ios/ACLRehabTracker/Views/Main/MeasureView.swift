@@ -46,6 +46,27 @@ struct MeasureView: View {
 
     private var measureMode: MeasureMode { MeasureMode(rawValue: measureModeRaw) ?? .standard }
 
+    // Accurate mode extras: the pose guide and the self-timer. Neither appears in Standard photo.
+    @AppStorage("accuratePoseGuideSeen") private var poseGuideSeen = false
+    @State private var showPoseGuide = false
+    /// 0 (off), 5 or 10 seconds.
+    @AppStorage("accurateSelfTimerSeconds") private var selfTimerSeconds = 0
+    /// Seconds left while the self-timer is counting; nil when it isn't.
+    @State private var countdownRemaining: Int?
+    @State private var countdownTask: Task<Void, Never>?
+    @State private var beeper = CountdownBeeper()
+
+    /// The knee the user said they are rehabbing, as the estimator names legs.
+    private var requestedKnee: KneeSide? {
+        #if DEBUG
+        // UI tests: `-testInjuredKnee left` stands in for a saved profile.
+        if let raw = UserDefaults.standard.string(forKey: "testInjuredKnee"), let side = KneeSide(rawValue: raw) {
+            return side
+        }
+        #endif
+        return userProfile?.injuredKnee
+    }
+
     enum RetakeIssue: Equatable {
         /// The phone couldn't find a hip, knee and ankle. Carries the AI check's note, if any.
         case noLeg(String?)
@@ -123,6 +144,7 @@ struct MeasureView: View {
             await loadUserProfile()
         }
         .onDisappear {
+            cancelCountdown()
             cameraService.stopCamera()
         }
         .alert("Error", isPresented: $showError) {
@@ -146,6 +168,18 @@ struct MeasureView: View {
             ))
             .presentationDetents([.large])
         }
+        .sheet(isPresented: $showPoseGuide) {
+            PoseGuideSheet(type: measurementType, side: requestedKnee)
+                .presentationDetents([.large])
+        }
+        .onChange(of: showModeSheet) { _, isShowing in
+            // The first time someone picks Accurate mode, show how to pose before their first photo.
+            if !isShowing, measureMode == .accurate, !poseGuideSeen {
+                poseGuideSeen = true
+                showPoseGuide = true
+            }
+        }
+        .onChange(of: measureModeRaw) { _, _ in cancelCountdown() }
         #if DEBUG
         .task {
             // Screenshots: `-showMeasureModeSheet YES` opens the method chooser.
@@ -214,6 +248,16 @@ struct MeasureView: View {
 
             // Camera Preview
             cameraPreview
+                .overlay(alignment: .top) {
+                    if measureMode == .accurate, screenState == .camera {
+                        accurateCameraTools
+                    }
+                }
+                .overlay {
+                    if let countdownRemaining {
+                        countdownOverlay(countdownRemaining)
+                    }
+                }
                 .padding(.horizontal, AppSpacing.lg)
 
             // Instructions
@@ -258,11 +302,15 @@ struct MeasureView: View {
 
             // Capture button (center)
             Button(action: {
-                if aiAnalysisConsented {
-                    handleCapture()
-                } else {
+                if countdownRemaining != nil {
+                    cancelCountdown()
+                } else if !aiAnalysisConsented {
                     pendingAction = .capture
                     showConsentSheet = true
+                } else if measureMode == .accurate, selfTimerSeconds > 0 {
+                    startCountdown(seconds: selfTimerSeconds)
+                } else {
+                    handleCapture()
                 }
             }) {
                 ZStack {
@@ -273,6 +321,11 @@ struct MeasureView: View {
                     if isProcessing {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: AppColors.text))
+                    } else if countdownRemaining != nil {
+                        // Counting down: the button becomes "stop".
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(AppColors.primary)
+                            .frame(width: 30, height: 30)
                     } else {
                         Circle()
                             .fill(AppColors.primary)
@@ -280,6 +333,8 @@ struct MeasureView: View {
                     }
                 }
             }
+            .accessibilityLabel(countdownRemaining != nil ? "Cancel self-timer" : "Take photo")
+            .accessibilityIdentifier("measure.capture")
             .disabled(isProcessing || (!cameraService.isCameraReady && isCameraLoading))
             .opacity((isProcessing || (!cameraService.isCameraReady && isCameraLoading)) ? 0.4 : 1.0)
 
@@ -397,6 +452,89 @@ struct MeasureView: View {
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.lg))
     }
 
+
+    // MARK: - Accurate mode camera tools
+
+    /// "How to pose" and the self-timer, laid over the top of the camera preview.
+    private var accurateCameraTools: some View {
+        HStack {
+            Button(action: { showPoseGuide = true }) {
+                Label("How to pose", systemImage: "figure.stand")
+            }
+            .buttonStyle(CameraPillStyle(isOn: false))
+            .accessibilityIdentifier("measure.poseGuide")
+
+            Spacer()
+
+            Button(action: {
+                selfTimerSeconds = selfTimerSeconds == 0 ? 5 : (selfTimerSeconds == 5 ? 10 : 0)
+                AnalyticsService.selfTimerChanged(seconds: selfTimerSeconds)
+            }) {
+                Label(selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds)s", systemImage: "timer")
+            }
+            .buttonStyle(CameraPillStyle(isOn: selfTimerSeconds > 0))
+            .accessibilityLabel(selfTimerSeconds == 0 ? "Self-timer off" : "Self-timer \(selfTimerSeconds) seconds")
+            .accessibilityHint("Changes between off, 5 and 10 seconds")
+            .accessibilityIdentifier("measure.selfTimer")
+        }
+        .padding(AppSpacing.sm)
+        .disabled(countdownRemaining != nil)
+        .opacity(countdownRemaining != nil ? 0 : 1)
+    }
+
+    private func countdownOverlay(_ remaining: Int) -> some View {
+        ZStack {
+            Color.black.opacity(0.35)
+            VStack(spacing: AppSpacing.sm) {
+                Text("\(remaining)")
+                    .font(.system(size: 120, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+                    .contentTransition(.numericText(countsDown: true))
+                    .accessibilityIdentifier("measure.countdown")
+                Text("Get into position. Tap the button to cancel.")
+                    .font(AppTypography.subhead)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(AppSpacing.lg)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.lg))
+        .allowsHitTesting(false)
+    }
+
+    /// Counts down out loud and on screen, then takes the photo.
+    private func startCountdown(seconds: Int) {
+        cancelCountdown()
+        beeper.prepare()
+        UIApplication.shared.isIdleTimerDisabled = true
+        countdownTask = Task { @MainActor in
+            for remaining in stride(from: seconds, to: 0, by: -1) {
+                withAnimation { countdownRemaining = remaining }
+                beeper.playTick()
+                UIAccessibility.post(notification: .announcement, argument: "\(remaining)")
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            countdownRemaining = nil
+            countdownTask = nil
+            UIApplication.shared.isIdleTimerDisabled = false
+            beeper.playShutter()
+            handleCapture()
+            // Let the last tone finish before giving the audio session back.
+            try? await Task.sleep(for: .seconds(1))
+            if countdownTask == nil { beeper.finish() }
+        }
+    }
+
+    private func cancelCountdown() {
+        guard countdownTask != nil || countdownRemaining != nil else { return }
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdownRemaining = nil
+        UIApplication.shared.isIdleTimerDisabled = false
+        beeper.finish()
+    }
 
     // MARK: - Retake View (Accurate mode)
     private var retakeView: some View {
@@ -803,7 +941,7 @@ struct MeasureView: View {
     /// The check can ask for a retake but can never block: if it can't run, the measurement stands.
     @MainActor
     private func measureAccurately(image: UIImage, type: MeasurementType) async {
-        async let pose = KneeAnalyzer.shared.detectPose(image: image, type: type, injuredKnee: userProfile?.injuredKnee)
+        async let pose = KneeAnalyzer.shared.detectPose(image: image, type: type, injuredKnee: requestedKnee)
         async let check = KneeAnalyzer.shared.checkPhoto(image: image, type: type)
         let estimate = await pose
         let checked = await check
@@ -825,9 +963,7 @@ struct MeasureView: View {
 
         accurateKeypoints = estimate.keypoints
         accurateAdjusted = false
-        accurateNote = estimate.confidence < Self.lowConfidence
-            ? "Your phone wasn't sure about this photo. Check the dots and drag any that are off."
-            : nil
+        accurateNote = Self.resultNote(for: estimate, requested: requestedKnee)
 
         if let verdict, !verdict.passed {
             AnalyticsService.accurateModeOutcome("check_failed")
@@ -837,6 +973,24 @@ struct MeasureView: View {
         }
         AnalyticsService.accurateModeOutcome(verdict == nil ? "measured_unchecked" : "measured")
         screenState = .result
+    }
+
+    /// The note under an Accurate result when something needs the user's eye; nil when nothing does.
+    /// A wrong-side photo matters most, then an unsure detection, then a side that can't be told.
+    static func resultNote(for estimate: KneePoseEstimate, requested: KneeSide?) -> String? {
+        let name = requested?.displayName.lowercased() ?? ""
+        let fit = KneeGeometry.sideFit(requested: requested.map { $0 == .left ? .left : .right },
+                                       facing: estimate.sideFacingCamera)
+        if case .opposite(let facing) = fit {
+            return "Your \(facing.rawValue) side is facing the camera, but your profile says \(name) knee. Check the dots are on your \(name) leg, or retake with it nearest the camera."
+        }
+        if estimate.confidence < lowConfidence {
+            return "Your phone wasn't sure about this photo. Check the dots and drag any that are off."
+        }
+        if fit == .unknown {
+            return "Couldn't tell which side is facing the camera. Check the dots are on your \(name) leg."
+        }
+        return nil
     }
 
     /// From the retake screen: measure this one photo the original way instead.
