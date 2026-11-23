@@ -31,7 +31,8 @@ The Measure tab has two methods, chosen in the "Method" row. The choice is store
 - **Whole-body mode** (opt-in, shown with a "Beta" tag; called Accurate mode in code, `MeasureMode.accurate`,
   and in the docs below): `KneePoseEstimator` finds hip, knee and ankle on the phone with Apple
   Vision and `KneeAngleMath` computes the angle (straight leg = 0). The photo needs the whole body,
-  side-on. In parallel `checkKneePhoto` (Gemini, `functions/src/kneeCheck.ts`) says whether the
+  side-on. (`KneeAnalyzer.photoCheckEnabled` is false in 1.2 because `checkKneePhoto` is not deployed:
+  the app does not call it and the explainer does not mention it.) When enabled, in parallel `checkKneePhoto` (Gemini, `functions/src/kneeCheck.ts`) says whether the
   photo is usable; if it can't run, the on-device result is shown anyway. The result screen draws
   the three points on the photo and they can be dragged.
 

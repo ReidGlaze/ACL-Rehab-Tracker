@@ -49,9 +49,15 @@ final class KneeAnalyzer {
         return estimate
     }
 
+    /// The AI photo check (`checkKneePhoto`) is not deployed yet, so the app neither calls it nor
+    /// tells users about it. Whole-body mode then measures entirely on the phone. Turn this on in the
+    /// same release that deploys the function.
+    static let photoCheckEnabled = false
+
     /// Returns nil when the check couldn't run (offline, rate limited, not deployed). A check that
     /// can't run must never stop the user from measuring.
     func checkPhoto(image: UIImage, type: MeasurementType) async -> KneePhotoCheck? {
+        guard Self.photoCheckEnabled else { return nil }
         guard let cgImage = image.uprightCGImage(maxDimension: 1280),
               let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.8) else { return nil }
         do {

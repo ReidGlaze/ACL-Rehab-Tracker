@@ -165,12 +165,14 @@ struct MeasureModeChooser: View {
             step(1, icon: "figure.stand",
                  title: "Whole body, side-on",
                  detail: "Prop your phone up or ask someone to take the photo. Head to feet in the picture, with the camera looking at the side of your leg.")
-            step(2, icon: "checkmark.shield",
-                 title: "AI checks the photo",
-                 detail: "It only decides whether the photo is usable, for example that your leg isn't cut off. If not, it tells you what to change.")
-            step(3, icon: "iphone",
+            if KneeAnalyzer.photoCheckEnabled {
+                step(2, icon: "checkmark.shield",
+                     title: "AI checks the photo",
+                     detail: "It only decides whether the photo is usable, for example that your leg isn't cut off. If not, it tells you what to change.")
+            }
+            step(KneeAnalyzer.photoCheckEnabled ? 3 : 2, icon: "iphone",
                  title: "Your phone measures the angle",
-                 detail: "It marks your hip, knee and ankle and measures the angle between the lines. You see the lines on your photo and can drag a dot if one is off.")
+                 detail: "It marks your hip, knee and ankle and measures the angle between the lines. You see the lines on your photo and can drag a dot if one is off. Pinch the photo to zoom in.")
 
             Text("A close-up of just your knee won't work in this mode. Use Standard photo for those. Either way, this is for personal tracking and is not a medical device.")
                 .font(AppTypography.footnote)

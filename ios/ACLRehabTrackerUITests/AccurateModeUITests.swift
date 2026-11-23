@@ -89,7 +89,9 @@ final class AccurateModeUITests: XCTestCase {
         app.buttons["measureMode.accurate"].tap()
         shot("03-chooser-accurate-selected")
         app.swipeUp()
-        XCTAssertTrue(app.staticTexts["3. Your phone measures the angle"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Your phone measures the angle'")).firstMatch.waitForExistence(timeout: 3))
+        // The AI photo check is not switched on in this release, so the explainer must not promise it.
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'AI checks the photo'")).firstMatch.exists)
         shot("04-chooser-explainer")
         app.buttons["measureMode.done"].tap()
 
