@@ -687,7 +687,7 @@ struct MeasureView: View {
                 .foregroundColor(AppColors.textTertiary)
 
             if accurateKeypoints != nil {
-                Text(accurateNote ?? "Measured on your phone from the dots on the photo. Drag a dot if it's off.")
+                Text(accurateNote ?? "Measured on your phone from the dots on the photo. Drag a dot if it's off. Pinch the photo to zoom in.")
                     .font(AppTypography.footnote)
                     .foregroundColor(accurateNote == nil ? AppColors.textSecondary : AppColors.warning)
                     .multilineTextAlignment(.center)

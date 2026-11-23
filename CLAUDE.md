@@ -43,6 +43,10 @@ Accurate mode only (none of this shows in Standard photo):
   unreliable in profile, so when the two legs clearly differ the one doing the movement is measured.
 - **Pose guide**: `PoseGuideSheet` (drawings for flexion and extension plus four rules). Opens once
   when Accurate mode is first chosen, and from "How to pose" on the camera preview.
+- **Zoom**: on the result photo (`KneeKeypointEditor`) pinch zooms up to 5x, one finger pans, double tap
+  zooms in or back out, and a "Reset zoom" pill appears while zoomed. Dots stay the same size and are
+  stored as fractions of the image, so zoom never changes the angle. Standard photo results have no
+  dots and no zoom.
 - **Self-timer**: off / 5 s / 10 s pill on the camera preview. Counts on screen and with beeps
   (`CountdownBeeper`, plays even on silent); tapping the capture button again cancels.
 

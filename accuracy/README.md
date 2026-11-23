@@ -78,7 +78,8 @@ leg was measured (11 instead of about 119), most likely because the bent leg's a
   test Firebase project and only run with `TEST_RUNNER_ACL_NETWORK=1`. Grant the camera first or its
   alert covers the screen: `xcrun simctl privacy booted grant camera com.twintipsolutions.ACLRehabTracker.test`.
   Also covered: the pose guide, the self-timer count and cancel, and the wrong-side and
-  unknown-side notes. All ten passed on 2026-11-22 (iPhone 17 simulator, iOS 26.2).
+  unknown-side notes, and zooming the result photo (zoom, pan, drag a dot while zoomed, reset, angle
+  unchanged). All eleven passed on 2026-11-23 (iPhone 17 simulator, iOS 26.2).
 - Debug launch arguments: `-startTab Measure`, `-measureMode accurate` (pins the mode for that run),
   `-resetMeasureMode YES`, `-showMeasureModeSheet YES`, `-testPhoto <path>`,
   `-forceCheckMessage <text>` and, simulator only, `-testKeypoints hx,hy,kx,ky,ax,ay` with `-testFacing left|right|unknown`. Also

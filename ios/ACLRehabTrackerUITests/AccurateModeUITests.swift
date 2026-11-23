@@ -200,6 +200,68 @@ final class AccurateModeUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhotoZoomsForPlacingDotsWithoutChangingTheAngle() throws {
+        try launch(mode: "accurate", photo: "seated.jpg")
+        let measured = try XCTUnwrap(angle())
+
+        let photo = app.descendants(matching: .any)["keypoint.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        let reset = app.buttons["keypoint.resetZoom"]
+        XCTAssertFalse(reset.exists, "No reset button until the photo is zoomed")
+
+        // Double tap zooms in around the tap. The dots are stored on the image, so the angle stays put.
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.6)).doubleTap()
+        XCTAssertTrue(reset.waitForExistence(timeout: 3), "Double tap zooms in")
+        XCTAssertEqual(reset.value as? String, "2.5x")
+        XCTAssertTrue((photo.value as? String ?? "").hasPrefix("Zoomed in"))
+        XCTAssertEqual(angle(), measured, "Zooming must not change the measured angle")
+        shot("18-zoomed-in")
+
+        // Dots can still be dragged while zoomed, and the number follows.
+        let ankle = app.otherElements["keypoint.ankle"].firstMatch
+        XCTAssertTrue(ankle.isHittable, "The ankle dot is still on screen after zooming")
+        let start = ankle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: -70, dy: 0)))
+        let moved = try XCTUnwrap(angle())
+        XCTAssertNotEqual(moved, measured, "Moving a dot while zoomed should change the angle")
+        shot("19-zoomed-dot-moved")
+
+        // Resetting the zoom keeps the adjusted dots where they were put on the photo.
+        reset.tap()
+        XCTAssertTrue(reset.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(angle(), moved, "Resetting the zoom must not change the angle")
+
+        // Pinching zooms too.
+        photo.pinch(withScale: 2.5, velocity: 2)
+        XCTAssertTrue(reset.waitForExistence(timeout: 3), "Pinch zooms in")
+        XCTAssertEqual(angle(), moved, "Pinching must not change the angle")
+
+        // One finger on the photo (not on a dot) pans it: the dots move on screen with the photo,
+        // and the angle stays the same.
+        let knee = app.otherElements["keypoint.knee"].firstMatch
+        let kneeBefore = knee.frame
+        // Start from a fixed spot on screen, measured from the reset button: the zoomed photo's own
+        // frame is bigger than what is showing, so a fraction of it could land off the photo.
+        let panStart = reset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: -180, dy: 170))
+        panStart.press(forDuration: 0.1, thenDragTo: panStart.withOffset(CGVector(dx: 60, dy: -40)))
+        shot("20-zoomed-panned")
+        XCTAssertEqual(knee.frame.midX, kneeBefore.midX + 60, accuracy: 12, "Panning moves the photo and its dots")
+        XCTAssertEqual(knee.frame.midY, kneeBefore.midY - 40, accuracy: 12)
+        XCTAssertEqual(angle(), moved, "Panning must not change the angle")
+
+        // Pinching back out returns to the whole photo, with the dots where they were.
+        // (From the maximum zoom it can take more than one pinch, as it would by hand.)
+        for _ in 0..<3 where reset.exists {
+            photo.pinch(withScale: 0.2, velocity: -2)
+            _ = reset.waitForNonExistence(timeout: 2)
+        }
+        XCTAssertFalse(reset.exists, "Pinching out returns to the whole photo")
+        XCTAssertEqual(angle(), moved, "Zooming out must not change the angle")
+        shot("21-zoomed-back-out")
+        XCTAssertTrue(app.buttons["Save"].exists)
+    }
+
+    @MainActor
     func testAccurateModeMeasuresAWholeBodyPhotoOnDevice() throws {
         try launch(mode: "accurate", photo: "seated.jpg")
 
