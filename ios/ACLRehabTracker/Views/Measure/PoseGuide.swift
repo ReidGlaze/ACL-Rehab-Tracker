@@ -74,9 +74,12 @@ struct PoseGuideSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.md) {
-                    Text("How to pose")
-                        .font(AppTypography.title2)
-                        .foregroundColor(AppColors.text)
+                    HStack(spacing: AppSpacing.sm) {
+                        Text("How to pose")
+                            .font(AppTypography.title2)
+                            .foregroundColor(AppColors.text)
+                        BetaTag()
+                    }
 
                     // The movement being measured now comes first.
                     ForEach(type == .flexion ? [MeasurementType.flexion, .extension] : [.extension, .flexion], id: \.self) { movement in
@@ -109,7 +112,7 @@ struct PoseGuideSheet: View {
                 .padding(AppSpacing.lg)
             }
             .background(AppColors.background)
-            .navigationTitle("Accurate mode")
+            .navigationTitle("Whole-body mode")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

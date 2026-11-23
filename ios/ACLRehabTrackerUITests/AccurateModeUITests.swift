@@ -82,7 +82,8 @@ final class AccurateModeUITests: XCTestCase {
 
         row.tap()
         XCTAssertTrue(app.staticTexts["How do you want to measure?"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["HOW ACCURATE MODE WORKS"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'HOW WHOLE-BODY MODE WORKS'")).firstMatch.exists)
+        XCTAssertTrue(app.buttons["measureMode.accurate"].label.hasPrefix("Whole-body mode, beta"))
         shot("02-chooser")
 
         app.buttons["measureMode.accurate"].tap()
@@ -99,7 +100,7 @@ final class AccurateModeUITests: XCTestCase {
         app.buttons["poseGuide.done"].tap()
 
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        XCTAssertTrue(row.label.contains("Accurate mode"))
+        XCTAssertTrue(row.label.contains("Whole-body mode, beta"))
         XCTAssertTrue(app.staticTexts["measure.instruction"].label.contains("whole body"))
         shot("05-measure-accurate")
 
@@ -274,13 +275,14 @@ final class AccurateModeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Measurement saved!"].waitForExistence(timeout: 30))
 
         app.tabBars.buttons["History"].tap()
-        let tagged = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Accurate mode'")).firstMatch
-        XCTAssertTrue(tagged.waitForExistence(timeout: 20), "The Accurate-mode measurement is labelled in History")
+        let tagged = app.staticTexts.matching(identifier: "history.rowMethod")
+        XCTAssertTrue(tagged.firstMatch.waitForExistence(timeout: 20), "The Whole-body mode measurement is labelled in History")
+        XCTAssertEqual(tagged.firstMatch.label, "Whole-body mode")
+        XCTAssertTrue(app.staticTexts["Beta"].exists)
         // Standard-photo saves have no `method` field, exactly like every measurement saved before
-        // Accurate mode existed. They must still be listed, without the label.
-        let untagged = app.staticTexts.matching(
-            NSPredicate(format: "identifier == 'history.rowTime' AND NOT (label CONTAINS 'Accurate mode')")).firstMatch
-        XCTAssertTrue(untagged.exists, "Measurements without a method field still show in History")
+        // this mode existed. They must still be listed, without the label.
+        let rows = app.staticTexts.matching(identifier: "history.rowTime")
+        XCTAssertGreaterThan(rows.count, tagged.count, "Measurements without a method field still show in History")
         shot("11-history")
     }
 }

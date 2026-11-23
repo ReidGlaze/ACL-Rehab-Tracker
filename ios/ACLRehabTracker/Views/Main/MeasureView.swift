@@ -566,7 +566,7 @@ struct MeasureView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("retake.message")
 
-                Text("Accurate mode needs your whole body in the photo, head to feet, taken from the side.")
+                Text("Whole-body mode needs your whole body in the photo, head to feet, taken from the side.")
                     .font(AppTypography.subhead)
                     .foregroundColor(AppColors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -28,7 +28,8 @@ The Measure tab has two methods, chosen in the "Method" row. The choice is store
 
 - **Standard photo** (default): the original flow. `GeminiPoseService` sends the photo to the
   `analyzeKneeAngle` Cloud Function and an AI model returns the angle. Works on knee close-ups.
-- **Accurate mode** (opt-in): `KneePoseEstimator` finds hip, knee and ankle on the phone with Apple
+- **Whole-body mode** (opt-in, shown with a "Beta" tag; called Accurate mode in code, `MeasureMode.accurate`,
+  and in the docs below): `KneePoseEstimator` finds hip, knee and ankle on the phone with Apple
   Vision and `KneeAngleMath` computes the angle (straight leg = 0). The photo needs the whole body,
   side-on. In parallel `checkKneePhoto` (Gemini, `functions/src/kneeCheck.ts`) says whether the
   photo is usable; if it can't run, the on-device result is shown anyway. The result screen draws

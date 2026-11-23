@@ -404,12 +404,22 @@ struct MeasurementRow: View {
                             .foregroundColor(AppColors.text)
                     }
 
-                    Text(measurement.method == .onDevice
-                         ? "\(DateHelpers.formatTime(measurement.timestamp)) \u{00B7} Accurate mode"
-                         : DateHelpers.formatTime(measurement.timestamp))
+                    Text(DateHelpers.formatTime(measurement.timestamp))
                         .font(AppTypography.caption1)
                         .foregroundColor(AppColors.textSecondary)
                         .accessibilityIdentifier("history.rowTime")
+
+                    // Only Whole-body mode saves carry a method; older and Standard photo rows show nothing here.
+                    if measurement.method == .onDevice {
+                        HStack(spacing: 6) {
+                            Text("Whole-body mode")
+                                .font(AppTypography.caption1)
+                                .foregroundColor(AppColors.textSecondary)
+                                .lineLimit(1)
+                                .accessibilityIdentifier("history.rowMethod")
+                            BetaTag()
+                        }
+                    }
                 }
 
                 Spacer()

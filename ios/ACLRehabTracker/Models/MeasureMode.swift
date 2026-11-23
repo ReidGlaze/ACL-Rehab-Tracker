@@ -14,9 +14,15 @@ enum MeasureMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .standard: return "Standard photo"
-        case .accurate: return "Accurate mode"
+        case .accurate: return "Whole-body mode"
         }
     }
+
+    /// Whole-body mode is new and still being tuned, so its name carries a small "Beta" tag.
+    var isBeta: Bool { self == .accurate }
+
+    /// The name as VoiceOver should read it.
+    var spokenTitle: String { isBeta ? "\(title), beta" : title }
 
     var icon: String {
         switch self {

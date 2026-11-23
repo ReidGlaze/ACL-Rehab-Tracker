@@ -21,8 +21,12 @@ struct MeasureModeRow: View {
                 Text(mode.title)
                     .font(AppTypography.subhead.weight(.semibold))
                     .foregroundColor(AppColors.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
 
-                Spacer()
+                if mode.isBeta { BetaTag() }
+
+                Spacer(minLength: AppSpacing.sm)
 
                 Text("Change")
                     .font(AppTypography.subhead)
@@ -33,7 +37,7 @@ struct MeasureModeRow: View {
             .background(AppColors.surface)
             .cornerRadius(AppRadius.md)
         }
-        .accessibilityLabel("Measuring method: \(mode.title)")
+        .accessibilityLabel("Measuring method: \(mode.spokenTitle)")
         .accessibilityHint("Opens the method chooser")
         .accessibilityIdentifier("measureMode.row")
     }
@@ -106,9 +110,8 @@ struct MeasureModeChooser: View {
                             .foregroundColor(AppColors.text)
                         if mode == .standard {
                             tag("Default")
-                        } else {
-                            tag("New")
                         }
+                        if mode.isBeta { BetaTag() }
                     }
                     Text(mode.summary)
                         .font(AppTypography.subhead)
@@ -133,7 +136,7 @@ struct MeasureModeChooser: View {
             )
             .cornerRadius(AppRadius.lg)
         }
-        .accessibilityLabel("\(mode.title). \(mode.summary)")
+        .accessibilityLabel("\(mode.spokenTitle). \(mode.summary)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("measureMode.\(mode.rawValue)")
     }
@@ -150,10 +153,14 @@ struct MeasureModeChooser: View {
 
     private var howItWorks: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("HOW ACCURATE MODE WORKS")
-                .font(AppTypography.footnote)
-                .foregroundColor(AppColors.textSecondary)
-                .tracking(1)
+            HStack(spacing: AppSpacing.sm) {
+                Text("HOW WHOLE-BODY MODE WORKS")
+                    .font(AppTypography.footnote)
+                    .foregroundColor(AppColors.textSecondary)
+                    .tracking(1)
+                BetaTag()
+            }
+            .accessibilityElement(children: .combine)
 
             step(1, icon: "figure.stand",
                  title: "Whole body, side-on",
@@ -196,6 +203,21 @@ struct MeasureModeChooser: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The small "Beta" tag shown next to the Whole-body mode name.
+struct BetaTag: View {
+    var body: some View {
+        Text("Beta")
+            .font(AppTypography.caption2.weight(.semibold))
+            .foregroundColor(AppColors.primary)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(AppColors.primary.opacity(0.15))
+            .cornerRadius(AppRadius.sm)
+            .fixedSize()
+            .accessibilityLabel("Beta")
     }
 }
 

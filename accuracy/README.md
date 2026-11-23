@@ -1,5 +1,7 @@
 # Accurate mode accuracy harness
 
+Users see this mode as "Whole-body mode" with a Beta tag; the code and this folder still say Accurate mode.
+
 Runs the iOS app's own `KneePoseEstimator` (Apple Vision, on this Mac) over photos with a known
 knee angle and reports the error. Nothing here calls a server.
 
