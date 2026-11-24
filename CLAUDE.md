@@ -53,6 +53,18 @@ Accurate mode only (none of this shows in Standard photo):
 
 Saved measurements are the same Firestore documents for both. Accurate mode adds two optional
 fields, `method: "on_device"` and `adjusted`; documents without them are Standard photo ones.
-Android has Standard photo only for now.
+Android (1.2, versionCode 7) has both methods too, with the same names, fields and preference key
+(`measureMode` in the `acl_rehab_prefs` SharedPreferences). Its twins of the iOS pieces:
+`data/model/MeasureMode.kt`, `data/pose/KneeGeometry.kt` (angle math, leg choice, result note),
+`data/service/KneePoseEstimator.kt` (ML Kit accurate pose detection, on the device, model bundled) and
+`ui/screens/measure/WholeBodyUi.kt` (chooser, pose guide, self-timer beeper, zoomable dot editor).
+There is no photo check on Android. A device with no camera shows a message and still measures from
+the photo library.
+
+Android tests: `./gradlew :app:testDebugUnitTest` (geometry) and `WholeBodyModeTest` on an emulator.
+The emulator tests need `seated.jpg` and `closeup.jpg` pushed to `/data/local/tmp/acl-test/` (see the
+test's header; `accuracy/fixtures/rehab/flexion_85_gem-seated.jpg` and
+`accuracy/fixtures/bad/flexion_x_closeup-bench.jpg` are the ones used). They clear the app's saved
+preferences on that emulator, and an emulator holding a release-signed install can't run them.
 
 `accuracy/` holds the harness that scores the estimator against labelled photos; see its README.

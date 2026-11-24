@@ -11,6 +11,9 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import java.io.File
@@ -25,6 +28,13 @@ class CameraService(private val context: Context) {
     private var isUsingFrontCamera = false
     private var previewView: PreviewView? = null
 
+    /**
+     * False once we know this device has no usable camera (some tablets, Chromebooks and
+     * emulators). The Measure tab then offers the photo library instead of a dead shutter.
+     */
+    var cameraAvailable by mutableStateOf(true)
+        private set
+
     fun getPreviewView(): PreviewView {
         if (previewView == null) {
             previewView = PreviewView(context)
@@ -35,15 +45,33 @@ class CameraService(private val context: Context) {
     fun setupCamera(lifecycleOwner: LifecycleOwner, onReady: () -> Unit = {}) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
-            cameraProvider = cameraProviderFuture.get()
-            bindCamera(lifecycleOwner)
-            onReady()
+            // On a device with no camera CameraX can fail to start at all; that must not crash.
+            try {
+                cameraProvider = cameraProviderFuture.get()
+                bindCamera(lifecycleOwner)
+                onReady()
+            } catch (e: Exception) {
+                android.util.Log.w("CameraService", "Camera unavailable", e)
+                cameraAvailable = false
+            }
         }, ContextCompat.getMainExecutor(context))
     }
 
     private fun bindCamera(lifecycleOwner: LifecycleOwner) {
         val provider = cameraProvider ?: return
         provider.unbindAll()
+
+        fun has(selector: CameraSelector) = runCatching { provider.hasCamera(selector) }.getOrDefault(false)
+        val hasBack = has(CameraSelector.DEFAULT_BACK_CAMERA)
+        val hasFront = has(CameraSelector.DEFAULT_FRONT_CAMERA)
+        if (!hasBack && !hasFront) {
+            imageCapture = null
+            cameraAvailable = false
+            return
+        }
+        // Use the camera that was asked for when it exists, otherwise the one the device has.
+        if (isUsingFrontCamera && !hasFront) isUsingFrontCamera = false
+        if (!isUsingFrontCamera && !hasBack) isUsingFrontCamera = true
 
         val cameraSelector = if (isUsingFrontCamera) {
             CameraSelector.DEFAULT_FRONT_CAMERA
@@ -59,7 +87,14 @@ class CameraService(private val context: Context) {
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .build()
 
-        provider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
+        try {
+            provider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
+            cameraAvailable = true
+        } catch (e: Exception) {
+            android.util.Log.w("CameraService", "Could not start the camera", e)
+            imageCapture = null
+            cameraAvailable = false
+        }
     }
 
     fun flipCamera(lifecycleOwner: LifecycleOwner) {

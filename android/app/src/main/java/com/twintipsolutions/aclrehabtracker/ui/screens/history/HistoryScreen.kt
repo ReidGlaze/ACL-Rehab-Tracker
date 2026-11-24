@@ -22,7 +22,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.platform.testTag
 import coil.compose.AsyncImage
+import com.twintipsolutions.aclrehabtracker.ui.screens.measure.BetaTag
 import com.twintipsolutions.aclrehabtracker.data.model.Measurement
 import com.twintipsolutions.aclrehabtracker.data.model.MeasurementType
 import com.twintipsolutions.aclrehabtracker.data.service.AuthService
@@ -382,7 +384,7 @@ fun HistoryScreen() {
 }
 
 @Composable
-private fun MeasurementRow(measurement: Measurement, onTap: () -> Unit) {
+internal fun MeasurementRow(measurement: Measurement, onTap: () -> Unit) {
     val color = if (measurement.type == MeasurementType.EXTENSION) {
         AppColors.ExtensionBlue
     } else {
@@ -461,8 +463,25 @@ private fun MeasurementRow(measurement: Measurement, onTap: () -> Unit) {
             Text(
                 text = DateHelpers.formatTime(measurement.timestamp),
                 fontSize = 13.sp,
-                color = AppColors.TextSecondary
+                color = AppColors.TextSecondary,
+                modifier = Modifier.testTag("history.rowTime")
             )
+
+            // Only Whole-body mode saves carry a method; older and Standard photo rows show nothing here.
+            if (measurement.isWholeBody) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Whole-body mode",
+                        fontSize = 13.sp,
+                        color = AppColors.TextSecondary,
+                        maxLines = 1,
+                        modifier = Modifier.testTag("history.rowMethod")
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    BetaTag()
+                }
+            }
         }
 
         // Week badge

@@ -21,8 +21,8 @@ android {
         applicationId = "com.twintipsolutions.aclrehabtracker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.1"
+        versionCode = 7
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -108,6 +108,18 @@ dependencies {
     // In-App Review
     implementation(libs.play.review)
 
+    // On-device pose detection (Whole-body mode). The model ships inside the app.
+    implementation(libs.mlkit.pose.accurate)
+
     // Debug
     debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
+
+    // Tests
+    testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext)
+    androidTestImplementation(libs.androidx.test.rules)
 }

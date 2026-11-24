@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -49,16 +50,46 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import com.google.android.play.core.review.ReviewManagerFactory
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.twintipsolutions.aclrehabtracker.data.model.KneeSide
+import com.twintipsolutions.aclrehabtracker.data.model.MeasureMode
+import com.twintipsolutions.aclrehabtracker.data.pose.KneeBend
+import com.twintipsolutions.aclrehabtracker.data.pose.KneeGeometry
+import com.twintipsolutions.aclrehabtracker.data.pose.KneeKeypoints
+import com.twintipsolutions.aclrehabtracker.data.pose.KneeLeg
+import com.twintipsolutions.aclrehabtracker.data.service.KneePoseEstimator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 
 private enum class MeasureScreenState {
-    CAMERA, PROCESSING, RESULT, SAVING
+    CAMERA, PROCESSING, RESULT, SAVING,
+    /** Whole-body mode only: the phone couldn't find a whole leg in the photo. */
+    RETAKE
 }
+
+/**
+ * Lets UI tests drive the Measure tab without a camera, a photo picker or a signed-in user.
+ * The app itself always passes null.
+ */
+class MeasureTestHooks(
+    /** Used in place of the photo picker when the library button is tapped. */
+    val photoPath: String? = null,
+    /** Stands in for the knee saved in the profile. */
+    val injuredKnee: KneeSide? = null,
+    /** Starts in this mode instead of the saved one, and doesn't save changes. */
+    val mode: MeasureMode? = null,
+)
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun MeasureScreen() {
+fun MeasureScreen(testHooks: MeasureTestHooks? = null) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -94,6 +125,67 @@ fun MeasureScreen() {
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // --- Whole-body mode (opt-in). Standard photo is the default and none of this touches it. ---
+    val prefs = remember { context.getSharedPreferences(MeasureMode.PREFS, android.content.Context.MODE_PRIVATE) }
+    var measureMode by remember { mutableStateOf(testHooks?.mode ?: MeasureMode.load(context)) }
+    var showModeSheet by remember { mutableStateOf(false) }
+    var showPoseGuide by remember { mutableStateOf(false) }
+    var selfTimerSeconds by remember { mutableIntStateOf(if (testHooks != null) 0 else prefs.getInt(MeasureMode.KEY_SELF_TIMER, 0)) }
+    var countdownRemaining by remember { mutableStateOf<Int?>(null) }
+    var countdownJob by remember { mutableStateOf<Job?>(null) }
+    val beeper = remember { CountdownBeeper() }
+    /** The photo as displayed (upright), with the dots drawn on it. */
+    var wholeBodyBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var wholeBodyKeypoints by remember { mutableStateOf<KneeKeypoints?>(null) }
+    var wholeBodyNote by remember { mutableStateOf<String?>(null) }
+    var wholeBodyAdjusted by remember { mutableStateOf(false) }
+
+    val requestedKnee: KneeLeg? = (testHooks?.injuredKnee ?: userProfile?.injuredKnee)?.let {
+        if (it == KneeSide.LEFT) KneeLeg.LEFT else KneeLeg.RIGHT
+    }
+    val wholeBodyAngle: Int? = wholeBodyKeypoints?.let { points ->
+        wholeBodyBitmap?.let { KneeGeometry.flexion(points, it.width, it.height) }?.let(KneeGeometry::display)
+    }
+
+    fun cancelCountdown() {
+        countdownJob?.cancel()
+        countdownJob = null
+        countdownRemaining = null
+    }
+
+    /** Finds hip, knee and ankle on the phone. Nothing is uploaded and no model is called. */
+    suspend fun analyzeWholeBody(path: String) {
+        val type = selectedType
+        val bitmap = withContext(Dispatchers.IO) { KneePoseEstimator.loadUpright(path) }
+        val estimate = bitmap?.let {
+            KneePoseEstimator.estimate(it, if (type == MeasurementType.FLEXION) KneeBend.FLEXION else KneeBend.EXTENSION, requestedKnee)
+        }
+        wholeBodyBitmap = bitmap
+        poseResult = null
+        if (estimate == null) {
+            wholeBodyKeypoints = null
+            screenState = MeasureScreenState.RETAKE
+        } else {
+            wholeBodyKeypoints = estimate.keypoints
+            wholeBodyNote = KneeGeometry.resultNote(estimate, requestedKnee)
+            wholeBodyAdjusted = false
+            screenState = MeasureScreenState.RESULT
+        }
+    }
+
+    // The mode can't change under a running countdown, and the screen stays on while it counts.
+    val view = LocalView.current
+    DisposableEffect(countdownRemaining != null) {
+        view.keepScreenOn = countdownRemaining != null
+        onDispose { view.keepScreenOn = false }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            countdownJob?.cancel()
+            beeper.finish()
+        }
+    }
+
     // Photo picker launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -115,6 +207,10 @@ fun MeasureScreen() {
                     }
                     capturedImagePath = tempFile.absolutePath
                     screenState = MeasureScreenState.PROCESSING
+                    if (measureMode == MeasureMode.ACCURATE) {
+                        analyzeWholeBody(tempFile.absolutePath)
+                        return@launch
+                    }
                     stage = AnalyticsService.FailureStage.ANALYSIS
                     val result = GeminiPoseService.detectKneeAngle(
                         imagePath = tempFile.absolutePath,
@@ -134,6 +230,16 @@ fun MeasureScreen() {
     }
 
     fun handlePickFromLibrary() {
+        cancelCountdown()
+        val testPhoto = testHooks?.photoPath
+        if (testPhoto != null && measureMode == MeasureMode.ACCURATE) {
+            scope.launch {
+                capturedImagePath = testPhoto
+                screenState = MeasureScreenState.PROCESSING
+                analyzeWholeBody(testPhoto)
+            }
+            return
+        }
         photoPickerLauncher.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
@@ -169,6 +275,10 @@ fun MeasureScreen() {
                 screenState = MeasureScreenState.PROCESSING
                 val path = cameraService.capturePhoto()
                 capturedImagePath = path
+                if (measureMode == MeasureMode.ACCURATE) {
+                    analyzeWholeBody(path)
+                    return@launch
+                }
                 stage = AnalyticsService.FailureStage.ANALYSIS
                 val result = GeminiPoseService.detectKneeAngle(
                     imagePath = path,
@@ -187,10 +297,62 @@ fun MeasureScreen() {
         }
     }
 
+    /** The shutter: in Whole-body mode with the self-timer on it counts down first; tap again to cancel. */
+    fun handleCapturePressed() {
+        if (countdownRemaining != null) {
+            cancelCountdown()
+            return
+        }
+        if (measureMode == MeasureMode.ACCURATE && selfTimerSeconds > 0) {
+            val seconds = selfTimerSeconds
+            countdownJob = scope.launch {
+                beeper.prepare()
+                for (remaining in seconds downTo 1) {
+                    countdownRemaining = remaining
+                    beeper.playTick()
+                    delay(1000)
+                }
+                beeper.playShutter()
+                countdownRemaining = null
+                countdownJob = null
+                handleCapture()
+            }
+        } else {
+            handleCapture()
+        }
+    }
+
+    /** From the retake screen: measure this one photo the original way instead. */
+    fun measureWithStandardInstead() {
+        val path = capturedImagePath ?: return
+        val type = selectedType
+        scope.launch {
+            try {
+                wholeBodyKeypoints = null
+                wholeBodyBitmap = null
+                screenState = MeasureScreenState.PROCESSING
+                val result = GeminiPoseService.detectKneeAngle(
+                    imagePath = path,
+                    injuredKnee = userProfile?.injuredKnee?.name?.lowercase(),
+                    injuryType = userProfile?.injuryType?.firestoreValue
+                )
+                poseResult = result
+                screenState = MeasureScreenState.RESULT
+            } catch (e: Exception) {
+                AnalyticsService.measurementFailed(type, null, AnalyticsService.FailureStage.ANALYSIS)
+                hapticError()
+                errorMessage = e.message ?: "Failed to analyze image"
+                screenState = MeasureScreenState.CAMERA
+            }
+        }
+    }
+
     fun handleSave() {
         scope.launch {
             val uid = AuthService.currentUserId ?: return@launch
-            val result = poseResult ?: return@launch
+            // Whole-body mode saves the angle of the dots as they are now; Standard photo the model's.
+            val isWholeBody = wholeBodyKeypoints != null
+            val angle = (if (isWholeBody) wholeBodyAngle else poseResult?.angle) ?: return@launch
             screenState = MeasureScreenState.SAVING
             try {
                 val weekPostOp = DateHelpers.calculateWeekPostOp(userProfile?.surgeryDate)
@@ -209,9 +371,12 @@ fun MeasureScreen() {
 
                 val measurement = Measurement(
                     type = selectedType,
-                    angle = result.angle,
+                    angle = angle,
                     weekPostOp = weekPostOp,
-                    photoUrl = photoUrl
+                    photoUrl = photoUrl,
+                    // Standard photo writes neither field, exactly as before.
+                    method = if (isWholeBody) Measurement.METHOD_ON_DEVICE else null,
+                    adjusted = if (isWholeBody) wholeBodyAdjusted else null
                 )
                 FirestoreService.saveMeasurement(uid, measurement)
                 // Reset with success feedback
@@ -220,6 +385,9 @@ fun MeasureScreen() {
                 screenState = MeasureScreenState.CAMERA
                 capturedImagePath = null
                 poseResult = null
+                wholeBodyKeypoints = null
+                wholeBodyBitmap = null
+                wholeBodyNote = null
 
                 // In-app review prompt
                 val prefs = context.getSharedPreferences("acl_rehab_prefs", android.content.Context.MODE_PRIVATE)
@@ -256,6 +424,9 @@ fun MeasureScreen() {
         capturedImagePath = null
         poseResult = null
         frozenPreviewBitmap = null
+        wholeBodyKeypoints = null
+        wholeBodyBitmap = null
+        wholeBodyNote = null
     }
 
     // Show success snackbar
@@ -280,21 +451,48 @@ fun MeasureScreen() {
                         cameraPermissionGranted = cameraPermissionState.status.isGranted,
                         onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
                         cameraService = cameraService,
-                        onCapture = { handleCapture() },
+                        onCapture = { handleCapturePressed() },
                         onPickFromLibrary = { handlePickFromLibrary() },
-                        onFlipCamera = { cameraService.flipCamera(lifecycleOwner) },
+                        onFlipCamera = { cancelCountdown(); cameraService.flipCamera(lifecycleOwner) },
                         isProcessing = screenState == MeasureScreenState.PROCESSING,
                         capturedImagePath = capturedImagePath,
-                        frozenPreviewBitmap = frozenPreviewBitmap
+                        frozenPreviewBitmap = frozenPreviewBitmap,
+                        mode = measureMode,
+                        onModeRowClick = { cancelCountdown(); showModeSheet = true },
+                        onShowPoseGuide = { cancelCountdown(); showPoseGuide = true },
+                        selfTimerSeconds = selfTimerSeconds,
+                        onCycleSelfTimer = {
+                            cancelCountdown()
+                            selfTimerSeconds = when (selfTimerSeconds) { 0 -> 5; 5 -> 10; else -> 0 }
+                            if (testHooks == null) prefs.edit().putInt(MeasureMode.KEY_SELF_TIMER, selfTimerSeconds).apply()
+                        },
+                        countdownRemaining = countdownRemaining
+                    )
+                }
+                MeasureScreenState.RETAKE -> {
+                    WholeBodyRetakeView(
+                        bitmap = wholeBodyBitmap,
+                        measurementType = selectedType,
+                        onRetake = {
+                            AnalyticsService.measurementRetaken(selectedType)
+                            handleRetake()
+                        },
+                        onUseStandard = { measureWithStandardInstead() },
+                        onShowPoseGuide = { showPoseGuide = true }
                     )
                 }
                 MeasureScreenState.RESULT, MeasureScreenState.SAVING -> {
                     ResultView(
                         imagePath = capturedImagePath,
-                        angle = poseResult?.angle ?: 0,
+                        angle = wholeBodyAngle ?: poseResult?.angle ?: 0,
                         goalAngle = selectedType.goalAngle,
                         measurementType = selectedType,
                         isSaving = screenState == MeasureScreenState.SAVING,
+                        wholeBodyBitmap = wholeBodyBitmap,
+                        wholeBodyKeypoints = wholeBodyKeypoints,
+                        onKeypointsChange = { wholeBodyKeypoints = it },
+                        onKeypointsEdited = { wholeBodyAdjusted = true },
+                        wholeBodyNote = wholeBodyNote,
                         onSave = { handleSave() },
                         onRetake = {
                             AnalyticsService.measurementRetaken(selectedType)
@@ -303,6 +501,31 @@ fun MeasureScreen() {
                     )
                 }
             }
+        }
+
+        if (showModeSheet) {
+            MeasureModeSheet(
+                selection = measureMode,
+                onSelect = {
+                    measureMode = it
+                    if (testHooks == null) MeasureMode.save(context, it)
+                },
+                onDone = {
+                    showModeSheet = false
+                    // The first switch to Whole-body mode shows how to pose, once.
+                    if (measureMode == MeasureMode.ACCURATE && !prefs.getBoolean(MeasureMode.KEY_POSE_GUIDE_SEEN, false)) {
+                        prefs.edit().putBoolean(MeasureMode.KEY_POSE_GUIDE_SEEN, true).apply()
+                        showPoseGuide = true
+                    }
+                }
+            )
+        }
+        if (showPoseGuide) {
+            PoseGuideSheet(
+                type = selectedType,
+                side = testHooks?.injuredKnee ?: userProfile?.injuredKnee,
+                onDone = { showPoseGuide = false }
+            )
         }
 
         // Success snackbar
@@ -340,8 +563,16 @@ private fun CameraView(
     onFlipCamera: () -> Unit,
     isProcessing: Boolean = false,
     capturedImagePath: String? = null,
-    frozenPreviewBitmap: android.graphics.Bitmap? = null
+    frozenPreviewBitmap: android.graphics.Bitmap? = null,
+    mode: MeasureMode = MeasureMode.STANDARD,
+    onModeRowClick: () -> Unit = {},
+    onShowPoseGuide: () -> Unit = {},
+    selfTimerSeconds: Int = 0,
+    onCycleSelfTimer: () -> Unit = {},
+    countdownRemaining: Int? = null
 ) {
+    val cameraAvailable = cameraService.cameraAvailable
+    val canCapture = cameraPermissionGranted && cameraAvailable
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -395,7 +626,12 @@ private fun CameraView(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Measuring method (Standard photo by default)
+        MeasureModeRow(mode = mode, onClick = onModeRowClick)
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Camera Preview or Permission Request - fills remaining space
         Box(
@@ -406,7 +642,24 @@ private fun CameraView(
                 .background(AppColors.Surface),
             contentAlignment = Alignment.Center
         ) {
-            if (cameraPermissionGranted) {
+            if (cameraPermissionGranted && !cameraAvailable && !isProcessing) {
+                // No camera on this device: the library still works.
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.testTag("measure.noCamera")
+                ) {
+                    Text(text = "Camera not available", color = AppColors.Text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Use the photo library button below instead",
+                        color = AppColors.TextSecondary,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp)
+                    )
+                }
+            } else if (cameraPermissionGranted) {
                 // Always keep camera preview in the tree so the PreviewView doesn't flash
                 CameraPreview(
                     previewView = cameraService.getPreviewView(),
@@ -431,7 +684,7 @@ private fun CameraView(
                             .fillMaxSize()
                             .background(AppColors.Background.copy(alpha = if (displayBitmap != null) 0.6f else 0.85f))
                     )
-                    AnalyzingStatus()
+                    AnalyzingStatus(mode)
                 }
             } else if (!isProcessing) {
                 Column(
@@ -461,22 +714,58 @@ private fun CameraView(
                     }
                 }
             }
+            // Whole-body mode extras, on top of the preview: how to pose, self-timer, the count.
+            if (mode == MeasureMode.ACCURATE && !isProcessing) {
+                if (countdownRemaining != null) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "$countdownRemaining",
+                            fontSize = 120.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.testTag("measure.countdown")
+                        )
+                        Text(
+                            text = "Get into position. Tap the button to cancel.",
+                            fontSize = 15.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    CameraPill("How to pose", "How to pose", isOn = false, tag = "measure.poseGuide", onClick = onShowPoseGuide)
+                    CameraPill(
+                        text = if (selfTimerSeconds == 0) "Timer off" else "Timer ${selfTimerSeconds}s",
+                        description = if (selfTimerSeconds == 0) "Self-timer off" else "Self-timer $selfTimerSeconds seconds",
+                        isOn = selfTimerSeconds > 0,
+                        tag = "measure.selfTimer",
+                        onClick = onCycleSelfTimer
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
         // Instructions
         Text(
-            text = if (selectedType == MeasurementType.EXTENSION)
-                "Straighten your leg as much as possible and capture from the side"
-            else
-                "Bend your knee as much as possible and capture from the side",
+            text = mode.instruction(selectedType),
             color = AppColors.TextSecondary,
             fontSize = 15.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
+                .testTag("measure.instruction")
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -495,6 +784,7 @@ private fun CameraView(
                 modifier = Modifier
                     .size(48.dp)
                     .background(AppColors.Surface, RoundedCornerShape(12.dp))
+                    .testTag("measure.library")
             ) {
                 Icon(
                     painter = androidx.compose.ui.res.painterResource(
@@ -512,7 +802,9 @@ private fun CameraView(
                     .size(80.dp)
                     .clip(CircleShape)
                     .background(AppColors.Background)
-                    .clickable(enabled = cameraPermissionGranted) { onCapture() },
+                    .clickable(enabled = canCapture) { onCapture() }
+                    .semantics { contentDescription = if (countdownRemaining != null) "Cancel self-timer" else "Take photo" }
+                    .testTag("measure.capture"),
                 contentAlignment = Alignment.Center
             ) {
                 // Outer ring
@@ -520,7 +812,7 @@ private fun CameraView(
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
-                        .background(AppColors.Text.copy(alpha = if (cameraPermissionGranted) 1f else 0.4f)),
+                        .background(AppColors.Text.copy(alpha = if (canCapture) 1f else 0.4f)),
                     contentAlignment = Alignment.Center
                 ) {
                     // Inner gap
@@ -531,13 +823,13 @@ private fun CameraView(
                             .background(AppColors.Background),
                         contentAlignment = Alignment.Center
                     ) {
-                        // Red fill
+                        // Red fill (a square "stop" while the self-timer is counting)
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
+                                .size(if (countdownRemaining != null) 30.dp else 64.dp)
+                                .clip(if (countdownRemaining != null) RoundedCornerShape(6.dp) else CircleShape)
                                 .background(
-                                    if (cameraPermissionGranted) AppColors.Primary
+                                    if (canCapture) AppColors.Primary
                                     else AppColors.Primary.copy(alpha = 0.4f)
                                 )
                         )
@@ -548,7 +840,7 @@ private fun CameraView(
             // Flip camera (right)
             IconButton(
                 onClick = onFlipCamera,
-                enabled = cameraPermissionGranted,
+                enabled = canCapture,
                 modifier = Modifier
                     .size(48.dp)
                     .background(AppColors.Surface, RoundedCornerShape(12.dp))
@@ -556,7 +848,7 @@ private fun CameraView(
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "Switch camera",
-                    tint = if (cameraPermissionGranted) AppColors.Text else AppColors.Text.copy(alpha = 0.4f),
+                    tint = if (canCapture) AppColors.Text else AppColors.Text.copy(alpha = 0.4f),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -578,7 +870,22 @@ private val analyzingSteps = listOf(
  * through steps to show progress instead of sitting on a static "Analyzing...".
  */
 @Composable
-private fun AnalyzingStatus() {
+private fun AnalyzingStatus(mode: MeasureMode = MeasureMode.STANDARD) {
+    if (mode == MeasureMode.ACCURATE) {
+        // Whole-body mode runs on the phone and takes a second or two.
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(modifier = Modifier.size(40.dp), color = AppColors.Primary, strokeWidth = 3.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Finding your hip, knee and ankle...",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AppColors.Text,
+                textAlign = TextAlign.Center
+            )
+        }
+        return
+    }
     var stepIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -619,8 +926,14 @@ private fun ResultView(
     measurementType: MeasurementType,
     isSaving: Boolean,
     onSave: () -> Unit,
-    onRetake: () -> Unit
+    onRetake: () -> Unit,
+    wholeBodyBitmap: android.graphics.Bitmap? = null,
+    wholeBodyKeypoints: KneeKeypoints? = null,
+    onKeypointsChange: (KneeKeypoints) -> Unit = {},
+    onKeypointsEdited: () -> Unit = {},
+    wholeBodyNote: String? = null
 ) {
+    val isWholeBody = wholeBodyBitmap != null && wholeBodyKeypoints != null
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -639,7 +952,17 @@ private fun ResultView(
         Spacer(modifier = Modifier.height(24.dp))
 
         // Photo preview - use weight to fill available space like iOS .fit
-        Box(
+        // In Whole-body mode the measured lines are drawn on it and can be adjusted.
+        if (isWholeBody) {
+            KneeKeypointEditor(
+                bitmap = wholeBodyBitmap!!,
+                keypoints = wholeBodyKeypoints!!,
+                onChange = onKeypointsChange,
+                onEdit = onKeypointsEdited,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
+        } else Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -682,13 +1005,24 @@ private fun ResultView(
                 text = "${angle}°",
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
-                color = AppColors.Text
+                color = AppColors.Text,
+                modifier = Modifier.testTag("measure.angle")
             )
             Text(
                 text = "Goal: ${goalAngle}°",
                 fontSize = 17.sp,
                 color = AppColors.TextTertiary
             )
+            if (isWholeBody) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = wholeBodyNote ?: "Measured on your phone from the dots on the photo. Drag a dot if it's off. Pinch the photo to zoom in.",
+                    fontSize = 13.sp,
+                    color = if (wholeBodyNote == null) AppColors.TextSecondary else AppColors.Warning,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag("measure.accurateNote")
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "For personal tracking only. Not for medical diagnosis.",
@@ -739,5 +1073,91 @@ private fun ResultView(
                 }
             }
         }
+    }
+}
+
+/** Whole-body mode only: the phone couldn't find a hip, knee and ankle in the photo. */
+@Composable
+private fun WholeBodyRetakeView(
+    bitmap: android.graphics.Bitmap?,
+    measurementType: MeasurementType,
+    onRetake: () -> Unit,
+    onUseStandard: () -> Unit,
+    onShowPoseGuide: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .navigationBarsPadding()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Couldn't measure this photo",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = AppColors.Text,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppColors.Surface),
+            contentAlignment = Alignment.Center
+        ) {
+            bitmap?.let {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = "Captured photo",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppColors.Surface)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Your phone couldn't find your hip, knee and ankle.",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AppColors.Text,
+                modifier = Modifier.testTag("retake.message")
+            )
+            Text(
+                text = "Whole-body mode needs your whole body in the photo, head to feet, taken from the side.",
+                fontSize = 15.sp,
+                color = AppColors.TextSecondary
+            )
+            Text(
+                text = "How to pose for ${measurementType.displayName.lowercase()}",
+                fontSize = 15.sp,
+                color = AppColors.Primary,
+                modifier = Modifier.clickable(onClick = onShowPoseGuide).testTag("retake.poseGuide")
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = onRetake,
+            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("retake.retake"),
+            colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
+            shape = RoundedCornerShape(16.dp)
+        ) { Text("Retake", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = onUseStandard,
+            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("retake.useStandard"),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Text)
+        ) { Text("Measure with Standard photo", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
     }
 }
